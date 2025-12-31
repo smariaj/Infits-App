@@ -1,0 +1,288 @@
+import 'package:flutter/material.dart';
+
+// Lead model
+class Lead {
+  final String initials;
+  final String name;
+  final String subtitle;
+  final String status;
+
+  Lead({
+    required this.initials,
+    required this.name,
+    required this.subtitle,
+    required this.status,
+  });
+}
+
+class FreshLeadsScreen extends StatelessWidget {
+  FreshLeadsScreen({super.key});
+
+  // Example static data (later replace with backend fetch)
+  final List<Lead> leads = [
+    Lead(
+      initials: 'SJ',
+      name: 'Sarah Jenkins',
+      subtitle: 'Real Estate • California',
+      status: 'Just Now',
+    ),
+    Lead(
+      initials: 'MR',
+      name: 'Michael Ross',
+      subtitle: 'Insurance • 15m ago',
+      status: 'New',
+    ),
+    Lead(
+      initials: 'JL',
+      name: 'Jessica Liu',
+      subtitle: 'Tech Inquiry • 1h ago',
+      status: 'Callback',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        titleSpacing: 16,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            SizedBox(height: 2),
+            Text(
+              'Fresh Leads',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 2),
+            Text(
+              'Manage your daily targets',
+              style: TextStyle(
+                color: Colors.grey,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_none, color: Colors.black),
+            onPressed: () {},
+          ),
+          const SizedBox(width: 8),
+          const CircleAvatar(
+            radius: 16,
+            backgroundColor: Colors.blue,
+            child: Text(
+              'AM',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Search Bar
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const TextField(
+                  decoration: InputDecoration(
+                    icon: Icon(Icons.search),
+                    hintText: 'Search by name, number or tag...',
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Filter Chips
+              Row(
+                children: [
+                  _filterChip('All Leads', selected: true),
+                  const SizedBox(width: 8),
+                  _filterChip('Priority'),
+                  const SizedBox(width: 8),
+                  _filterChip('Newest'),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Today's Queue
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text(
+                    "Today's Queue",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'View All',
+                    style: TextStyle(color: Colors.blue),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              // Dynamic Lead List
+              Expanded(
+                child: ListView.builder(
+                  itemCount: leads.length,
+                  itemBuilder: (context, index) {
+                    final lead = leads[index];
+                    return _leadCard(
+                      initials: lead.initials,
+                      name: lead.name,
+                      subtitle: lead.subtitle,
+                      status: lead.status,
+                      primaryButton: 'Call Lead',
+                    );
+                  },
+                ),
+              ),
+
+              // End text
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    "You've reached the end of the list",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      bottomNavigationBar: BottomNavigationBar(
+        selectedItemColor: Colors.blue,
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Leads'),
+          BottomNavigationBarItem(icon: Icon(Icons.campaign), label: 'Campaigns'),
+          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Call Stats'),
+        ],
+      ),
+    );
+  }
+
+  // 🔹 Filter Chip Widget
+  static Widget _filterChip(String text, {bool selected = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: selected ? Colors.blue : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: selected ? Colors.white : Colors.black,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  // 🔹 Lead Card Widget
+  static Widget _leadCard({
+    required String initials,
+    required String name,
+    required String subtitle,
+    required String status,
+    required String primaryButton,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: Colors.orange.shade100,
+                child: Text(initials),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  status,
+                  style: const TextStyle(fontSize: 10),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                  ),
+                  child: Text(primaryButton),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.more_vert),
+                onPressed: () {},
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
