@@ -51,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse("http://10.55.68.133:3000/login"), // hotspot IP
+        Uri.parse("http://10.37.119.61:3000/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "email": email,
@@ -66,6 +66,9 @@ class _LoginScreenState extends State<LoginScreen> {
         SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setString("jwt_token", data["token"]);
         await prefs.setString("user_name", data["user"]["name"]); // store name
+        await prefs.setString("profile_image", data["user"]["profile_image"] ?? "");
+        await prefs.setInt("user_id", data["user"]["id"]);
+
 
         _showMessage("Login successful");
 

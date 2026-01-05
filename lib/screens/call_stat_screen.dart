@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CallStatsScreen extends StatefulWidget {
   const CallStatsScreen({super.key});
@@ -15,7 +18,10 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
   String? _lastStatus;
   bool _isIncomingCall = false;
   bool _callConnected = false;
-  bool _hasProcessedIncoming = false;
+  String? _currentCallType; // 'in', 'out', 'missed' to prevent duplicates
+  DateTime? _lastIncomingCallTime;
+  DateTime? _lastOutgoingCallTime;
+  DateTime? _callStartTime;
 
   // Track call stats
   Map<String, dynamic> callStats = {
@@ -30,6 +36,9 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
     'remaining': 10,
   };
 
+  int? _userId;
+  String? _token;
+
   @override
   void initState() {
     super.initState();
@@ -38,6 +47,7 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
 
   Future<void> _init() async {
     await _requestPermissions();
+    await _loadUser();
     _listenPhoneState();
   }
 
@@ -50,85 +60,136 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
   // ---------------- Permissions ----------------
   Future<void> _requestPermissions() async {
     final status = await Permission.phone.request();
-    if (!status.isGranted) {
-      debugPrint('Phone permission denied');
-    }
+    if (!status.isGranted) debugPrint('Phone permission denied');
+  }
+
+  // ---------------- Load logged-in user ----------------
+  Future<void> _loadUser() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    _userId = prefs.getInt("user_id");
+    _token = prefs.getString("jwt_token");
   }
 
   // ---------------- Phone State Listener ----------------
-  // ---------------- Phone State Listener ----------------
   void _listenPhoneState() {
-    DateTime? _lastIncomingCallTime;
-
-    _phoneSub = PhoneState.stream.listen((PhoneState state) {
+    _phoneSub = PhoneState.stream.listen((PhoneState state) async {
       final status = state.status.name;
+      final now = DateTime.now();
 
-      debugPrint('Phone State: $status, Last Status: $_lastStatus, IsIncoming: $_isIncomingCall');
+      debugPrint('--- PhoneState update ---');
+      debugPrint('Status: $status');
+      debugPrint('Last status: $_lastStatus');
+      debugPrint('Current call type: $_currentCallType');
+      debugPrint('Is incoming: $_isIncomingCall, Call connected: $_callConnected');
 
-      // Handle CALL_INCOMING (incoming call ringing)
+      // ---------------- Incoming call ----------------
       if (status == 'CALL_INCOMING') {
-        final now = DateTime.now();
-
-        // Check if this is likely a duplicate event (within 2 seconds of last CALL_INCOMING)
         if (_lastIncomingCallTime == null ||
             now.difference(_lastIncomingCallTime!).inSeconds > 2) {
-
           _lastIncomingCallTime = now;
           _isIncomingCall = true;
           _callConnected = false;
+          _callStartTime = now;
 
-          setState(() {
-            callStats['in'] = (callStats['in'] as int) + 1;
-            callStats['allCalls'] = (callStats['allCalls'] as int) + 1;
-            _updateTimestamps();
-          });
-        } else {
-          debugPrint('Ignoring duplicate CALL_INCOMING event (too soon)');
+          if (_currentCallType == null) {
+            _currentCallType = 'in';
+            setState(() {
+              callStats['in']++;
+              callStats['allCalls']++;
+              _updateTimestamps();
+            });
+
+            Future.microtask(() async {
+              // Missed? Duration 0 for now; will be updated on CALL_ENDED
+              await _logCall(type: "in", connected: false, startTime: _callStartTime, endTime: now);
+            });
+          }
         }
       }
 
-      // Handle CALL_STARTED (call picked up/outgoing call started)
+      // ---------------- Call started ----------------
       else if (status == 'CALL_STARTED') {
-        // Update timestamps
-        _updateTimestamps();
+        _callStartTime ??= now; // start timing if not already
 
-        // Check if this is answering an incoming call
-        if (_lastStatus == 'CALL_INCOMING' && _isIncomingCall) {
+        // Answered incoming
+        if (_lastStatus == 'CALL_INCOMING' && _isIncomingCall && !_callConnected) {
+          _callConnected = true;
           setState(() {
-            callStats['connected'] = (callStats['connected'] as int) + 1;
-            _callConnected = true;
+            callStats['connected']++;
             _updateProgress();
+          });
+          Future.microtask(() async {
+            if (_currentCallType == 'in') {
+              await _logCall(type: "in", connected: true, startTime: _callStartTime, endTime: now);
+            }
           });
         }
-        // Check if this is an outgoing call (going from idle to CALL_STARTED)
+
+        // Outgoing call
         else if (_lastStatus == null || _lastStatus == 'CALL_ENDED') {
-          // This is an outgoing call
-          _isIncomingCall = false;
-          setState(() {
-            callStats['out'] = (callStats['out'] as int) + 1;
-            callStats['allCalls'] = (callStats['allCalls'] as int) + 1;
-            callStats['connected'] = (callStats['connected'] as int) + 1;
-            _updateProgress();
-          });
+          if (_lastOutgoingCallTime == null ||
+              now.difference(_lastOutgoingCallTime!).inSeconds > 2) {
+            _lastOutgoingCallTime = now;
+            _isIncomingCall = false;
+            _callConnected = true;
+            _callStartTime ??= now;
+
+            if (_currentCallType == null) {
+              _currentCallType = 'out';
+              Future.delayed(const Duration(seconds: 1), () async {
+                if (!mounted) return;
+                setState(() {
+                  callStats['out']++;
+                  callStats['allCalls']++;
+                  callStats['connected']++;
+                  _updateProgress();
+                });
+                await _logCall(
+                  type: "out",
+                  connected: true,
+                  startTime: _callStartTime,
+                  endTime: DateTime.now(),
+                );
+              });
+            }
+          }
         }
       }
 
-      // Handle CALL_ENDED (call finished)
+      // ---------------- Call ended ----------------
       else if (status == 'CALL_ENDED') {
-        // Check for missed call (incoming call that ended without being answered)
-        if (_lastStatus == 'CALL_INCOMING' && _isIncomingCall && !_callConnected) {
-          setState(() {
-            callStats['missed'] = (callStats['missed'] as int) + 1;
-          });
+        final callEndTime = now;
+
+        int durationSeconds = 0;
+        if (_callStartTime != null) {
+          durationSeconds = callEndTime.difference(_callStartTime!).inSeconds;
         }
 
-        // Reset for next call
+        // Missed incoming
+        if (_lastStatus == 'CALL_INCOMING' && _isIncomingCall && !_callConnected) {
+          if (_currentCallType != 'missed') {
+            _currentCallType = 'missed';
+            setState(() {
+              callStats['missed']++;
+            });
+            await _logCall(
+              type: "missed",
+              connected: false,
+              startTime: _callStartTime,
+              endTime: callEndTime,
+            );
+          }
+        }
+
+        // Reset flags
         _isIncomingCall = false;
         _callConnected = false;
-        _lastIncomingCallTime = null;
+        _currentCallType = null;
+        _callStartTime = null;
       }
 
       _lastStatus = status;
+      debugPrint('--- End PhoneState update ---\n');
     });
   }
 
@@ -137,18 +198,47 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
     final timeStr =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-    if (callStats['firstCall'] == '-') {
-      callStats['firstCall'] = timeStr;
-    }
+    if (callStats['firstCall'] == '-') callStats['firstCall'] = timeStr;
     callStats['lastCall'] = timeStr;
   }
 
   void _updateProgress() {
     final connected = callStats['connected'] as int;
     final dailyGoal = callStats['dailyGoal'] as int;
-    callStats['remaining'] = dailyGoal - connected;
-    if (callStats['remaining'] < 0) {
-      callStats['remaining'] = 0;
+    callStats['remaining'] = (dailyGoal - connected).clamp(0, dailyGoal);
+  }
+
+  // ---------------- Backend Integration ----------------
+  Future<void> _logCall({
+    required String type,
+    required bool connected,
+    DateTime? startTime,
+    DateTime? endTime,
+  }) async {
+    if (_userId == null) return;
+
+    final durationSeconds = (startTime != null && endTime != null)
+        ? endTime.difference(startTime).inSeconds
+        : 0;
+
+    final callData = {
+      "user_id": _userId,
+      "type": type,
+      "connected": connected,
+      "duration": durationSeconds,
+    };
+
+    debugPrint('Logging call to backend: $callData');
+
+    try {
+      final response = await http.post(
+        Uri.parse("http://10.37.119.61:3000/call-stats/"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(callData),
+      );
+      debugPrint('Backend response: ${response.statusCode} - ${response.body}');
+    } catch (e) {
+      debugPrint('Failed to log call: $e');
     }
   }
 
@@ -174,79 +264,87 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Call time cards
             Row(
               children: [
                 Expanded(
-                    child: _callTimeCard(
-                        'First Call', callStats['firstCall'].toString(),
-                        Icons.call_received, Colors.green)),
+                  child: _callTimeCard(
+                    'First Call',
+                    callStats['firstCall'].toString(),
+                    Icons.call_received,
+                    Colors.green,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                    child: _callTimeCard(
-                        'Last Call', callStats['lastCall'].toString(),
-                        Icons.call_made, Colors.red)),
+                  child: _callTimeCard(
+                    'Last Call',
+                    callStats['lastCall'].toString(),
+                    Icons.call_made,
+                    Colors.red,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 22),
-            // Top row
             Row(
               children: [
                 Expanded(
-                    child: _statCard(
-                      title: 'All Calls',
-                      count: callStats['allCalls'],
-                      icon: Icons.phone,
-                      //percentage: '+15%',
-                      percentageColor: Colors.green,
-                    )),
+                  child: _statCard(
+                    title: 'All Calls',
+                    count: callStats['allCalls'],
+                    icon: Icons.phone,
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                    child: _statCard(
-                      title: 'Target',
-                      count: callStats['dailyGoal'],
-                      icon: Icons.flag,
-                      connected: callStats['connected'],
-                    )),
+                  child: _statCard(
+                    title: 'Target',
+                    count: callStats['dailyGoal'],
+                    icon: Icons.flag,
+                    connected: callStats['connected'],
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 22),
-            // Second row
             Row(
               children: [
                 Expanded(
-                    child: _statCard(
-                      title: 'In',
-                      count: callStats['in'],
-                      icon: Icons.call_received,
-                      color: Colors.green,
-                    )),
+                  child: _statCard(
+                    title: 'In',
+                    count: callStats['in'],
+                    icon: Icons.call_received,
+                    color: Colors.green,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: _statCard(
-                      title: 'Out',
-                      count: callStats['out'],
-                      icon: Icons.call_made,
-                      color: Colors.blue,
-                    )),
+                  child: _statCard(
+                    title: 'Out',
+                    count: callStats['out'],
+                    icon: Icons.call_made,
+                    color: Colors.blue,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                    child: _statCard(
-                      title: 'Missed',
-                      count: callStats['missed'],
-                      icon: Icons.call_missed,
-                      color: Colors.red,
-                    )),
+                  child: _statCard(
+                    title: 'Missed',
+                    count: callStats['missed'],
+                    icon: Icons.call_missed,
+                    color: Colors.red,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 22),
-            // Daily goal
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    'Daily Goal Progress - ${(progress * 100).toInt()}% completed',
-                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  'Daily Goal Progress - ${(progress * 100).toInt()}% completed',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
                 const SizedBox(height: 6),
                 LinearProgressIndicator(
                   value: progress > 1.0 ? 1.0 : progress,
@@ -272,7 +370,6 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           setState(() {
-            // Reset stats
             callStats = {
               'firstCall': '-',
               'lastCall': '-',
@@ -287,7 +384,10 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
             _lastStatus = null;
             _isIncomingCall = false;
             _callConnected = false;
-            _hasProcessedIncoming = false;
+            _currentCallType = null;
+            _lastIncomingCallTime = null;
+            _lastOutgoingCallTime = null;
+            _callStartTime = null;
           });
         },
         backgroundColor: Colors.blue,
@@ -301,8 +401,6 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
     required String title,
     required dynamic count,
     required IconData icon,
-    String? percentage,
-    Color? percentageColor,
     dynamic connected = 0,
     Color? color,
   }) {
@@ -321,26 +419,25 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
             Text(title, style: const TextStyle(fontWeight: FontWeight.bold))
           ]),
           const SizedBox(height: 8),
-          Text('$count', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          if (percentage != null) ...[
-            const SizedBox(height: 4),
-            Text(percentage,
-                style: TextStyle(fontSize: 12, color: percentageColor, fontWeight: FontWeight.bold)),
-          ],
+          Text('$count',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           if (title == 'Target') ...[
             const SizedBox(height: 4),
-            Text('Connected $connected', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            Text('Connected $connected',
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ],
       ),
     );
   }
 
-  Widget _callTimeCard(String title, String time, IconData icon, Color iconColor) {
+  Widget _callTimeCard(
+      String title, String time, IconData icon, Color iconColor) {
     return Container(
       height: 90,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration:
+      BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,

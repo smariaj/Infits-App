@@ -2,18 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
-// Screens placeholders
+// Screens
 import 'all_leads_overview.dart';
 import 'call_stat_screen.dart';
 import 'message_template_screen.dart';
 import 'donor_form_screen.dart';
 import 'prasadam_form_entry.dart';
 import 'campaignscreen.dart';
-import 'profileScreen.dart';
 import 'setting_screen.dart';
-
-
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -23,40 +19,23 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  int selectedDrawerIndex = 0;
   int selectedBottomNavIndex = 0;
   bool acceptingCalls = true;
+
   int highPriorityLeads = 8;
   int todayHighPriority = 2;
   int freshLeads = 42;
   int contactedLeads = 15;
-  List<Map<String, String>> recentActivities = [
+
+  String userName = "User";
+  String profileImage = "";
+  String agentId = "0"; // <- store agentId
+
+  final List<Map<String, String>> recentActivities = [
     {'name': 'John Doe', 'status': 'No answer • Added to callback list', 'time': '2m ago'},
     {'name': 'Sarah Smith', 'status': 'Callback scheduled • Pricing Inquiry', 'time': '2:00 PM'},
     {'name': 'Michael Key', 'status': 'Deal Closed • Contract sent', 'time': '1h ago'},
   ];
-
-  // List of screens for bottom nav
-  final List<Widget> bottomNavScreens = [
-    const DashboardScreen(),
-    const AllLeadsScreen(),
-    const CampaignsScreen(),
-    CallStatsScreen(),
-  ];
-
-  // List of drawer screens
-  final Map<int, Widget> drawerScreens = {
-    0: const AllLeadsScreen(),
-    1: const CampaignsScreen(),
-    2: const MessageTemplateScreen(),
-    3: const RecordDefinitionScreen(),
-    4: const ParsadamFormScreen(telecallerName: 'xyz'),
-    5: CallStatsScreen(),
-    6: const SettingsScreen(), // Sign out or placeholder
-  };
-
-  String username="User";
-  bool accepting_calls=true;
 
   @override
   void initState() {
@@ -65,17 +44,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
       userName = prefs.getString("user_name") ?? "User";
+      profileImage = prefs.getString("profile_image") ?? "";
+      agentId = prefs.getInt("user_id")?.toString() ?? "0";
     });
   }
 
+  // ---------------- PROFILE AVATAR ----------------
+  Widget _buildProfileAvatar() {
+    if (profileImage.isEmpty) {
+      return CircleAvatar(
+        radius: 30,
+        backgroundColor: Colors.white,
+        child: Text(
+          _getInitials(userName),
+          style: const TextStyle(
+            color: Colors.blue,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
 
+    return CircleAvatar(
+      radius: 30,
+      backgroundColor: Colors.white,
+      backgroundImage: NetworkImage(
+        "http://10.37.119.61:3000/uploads/$profileImage",
+      ),
+      onBackgroundImageError: (_, __) {
+        setState(() {
+          profileImage = "";
+        });
+      },
+    );
+  }
+
+  // ---------------- DASHBOARD BUILD ----------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[100],
+
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -92,127 +105,116 @@ class _DashboardScreenState extends State<DashboardScreen> {
           SizedBox(width: 16),
         ],
       ),
+
+      // ---------------- DRAWER ----------------
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            DrawerHeader(
+              decoration: const BoxDecoration(color: Colors.blue),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _buildProfileAvatar(),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'View Profile',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        acceptingCalls ? 'Accepting Calls' : 'Not Accepting Calls',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      Switch(
+                        value: acceptingCalls,
+                        activeColor: Colors.white,
+                        onChanged: (value) {
+                          setState(() => acceptingCalls = value);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            _drawerItem(Icons.person, 'All Leads', const AllLeadsScreen()),
+            _drawerItem(Icons.campaign, 'Campaigns', CampaignsScreen(agentId: agentId)),
+            _drawerItem(Icons.message, 'Message Templates', const MessageTemplateScreen()),
+            _drawerItem(Icons.description, 'Record Definition', const RecordDefinitionScreen()),
+            _drawerItem(Icons.food_bank, 'Prasadam Form',
+                const ParsadamFormScreen(telecallerName: 'xyz')),
+            _drawerItem(Icons.bar_chart, 'Call Stats', const CallStatsScreen()),
+            _drawerItem(Icons.settings, 'Settings', const SettingsScreen()),
+          ],
+        ),
+      ),
+
+      // ---------------- BODY ----------------
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // High Priority Card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF4E91FC), Color(0xFF00C6FF)],
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('HIGH PRIORITY', style: TextStyle(color: Colors.white70)),
-                        const SizedBox(height: 8),
-                        Text('Interested Leads',
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 25,
-                                fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 10),
-                        Text('$highPriorityLeads +$todayHighPriority today',
-                            style: const TextStyle(color: Colors.yellow, fontSize: 20)),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.star, color: Colors.yellow, size: 75),
-                ],
-              ),
-            ),
-
+            _highPriorityCard(),
             const SizedBox(height: 16),
-
-            // Two small cards
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                        color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                    child: Column(
-                      children: [
-                        Text('$freshLeads',
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        const Text('Fresh Leads', textAlign: TextAlign.center),
-                      ],
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(left: 8),
-                    decoration: BoxDecoration(
-                        color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                    child: Column(
-                      children: [
-                        Text('$contactedLeads',
-                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 8),
-                        const Text('Contacted', textAlign: TextAlign.center),
-                        const SizedBox(height: 4),
-                        const Text('Pending', style: TextStyle(color: Colors.orange)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
+            _statsRow(),
             const SizedBox(height: 20),
             const Text('Quick Actions', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-
-            // Quick actions row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                quickAction(Icons.phone, 'Start Dialing', onTap: _startDialing),
-                quickAction(Icons.person_add, 'Add Lead', onTap: () => _navigate(context, const AllLeadsScreen())),
-                quickAction(Icons.description, 'View Script', onTap: () => _navigate(context, const MessageTemplateScreen())),
-                quickAction(Icons.calendar_today, 'Tasks', onTap: () => _navigate(context, const CampaignsScreen())),
-              ],
-            ),
-
+            _quickActions(),
             const SizedBox(height: 20),
             const Text('Recent Activity', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-
-            // Recent activity list
             Column(
-              children: recentActivities
-                  .map((item) => recentActivity(item['name']!, item['status']!, item['time']!))
-                  .toList(),
+              children: recentActivities.map(_recentActivity).toList(),
             ),
           ],
         ),
       ),
 
+      // ---------------- BOTTOM NAV ----------------
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: selectedBottomNavIndex,
         selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
         onTap: (index) {
-          setState(() {
-            selectedBottomNavIndex = index;
-          });
-          _navigate(context, bottomNavScreens[index]);
+          setState(() => selectedBottomNavIndex = index);
+          if (index == 0) return;
+          switch (index) {
+            case 1:
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const AllLeadsScreen()));
+              break;
+            case 2:
+              Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => CampaignsScreen(agentId: agentId)));
+              break;
+            case 3:
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const CallStatsScreen()));
+              break;
+          }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
@@ -221,162 +223,121 @@ class _DashboardScreenState extends State<DashboardScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Call Stats'),
         ],
       ),
-
-        drawer: Drawer(
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              DrawerHeader(
-                decoration: const BoxDecoration(color: Colors.blue),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.white,
-                          child: Text(
-                            _getInitials(userName),
-                            style: const TextStyle(
-                                color: Colors.blue,
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              userName,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text('View Profile',
-                                style: TextStyle(color: Colors.white70, fontSize: 14)),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          acceptingCalls ? 'Accepting Calls' : 'Not Accepting Calls',
-                          style: const TextStyle(color: Colors.white, fontSize: 16),
-                        ),
-                        Switch(
-                          value: acceptingCalls,
-                          activeColor: Colors.white,
-                          activeTrackColor: Colors.white54,
-                          inactiveThumbColor: Colors.grey,
-                          inactiveTrackColor: Colors.white30,
-                          onChanged: (value) {
-                            setState(() {
-                              acceptingCalls = value;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // Fixed drawer items
-              ListTile(
-                leading: const Icon(Icons.person),
-                title: const Text('All Leads'),
-                onTap: () => _navigate(context, const AllLeadsScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.campaign),
-                title: const Text('Campaigns'),
-                onTap: () => _navigate(context, const CampaignsScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.message),
-                title: const Text('Message Templates'),
-                onTap: () => _navigate(context, const MessageTemplateScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.description),
-                title: const Text('Record Definition'),
-                onTap: () => _navigate(context, const RecordDefinitionScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.food_bank),
-                title: const Text('Prasadam Form'),
-                onTap: () => _navigate(context, const ParsadamFormScreen(telecallerName: 'xyz')),
-              ),
-              ListTile(
-                leading: const Icon(Icons.bar_chart),
-                title: const Text('Call Stats'),
-                onTap: () => _navigate(context, CallStatsScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.settings),
-                title: const Text('Settings'),
-                onTap: () => _navigate(context, const SettingsScreen()),
-              ),
-            ],
-          ),
-        )
-
     );
   }
 
-  // Quick action button
-  Widget quickAction(IconData icon, String label, {required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
+  // ---------------- HELPERS ----------------
+  ListTile _drawerItem(IconData icon, String title, Widget screen) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => screen),
+      ),
+    );
+  }
+
+  Widget _highPriorityCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF4E91FC), Color(0xFF00C6FF)],
+        ),
+      ),
+      child: Row(
         children: [
-          CircleAvatar(radius: 28, backgroundColor: Colors.white, child: Icon(icon, color: Colors.blue, size: 28)),
-          const SizedBox(height: 8),
-          Text(label, style: const TextStyle(fontSize: 12)),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('HIGH PRIORITY', style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 8),
+              const Text(
+                'Interested Leads',
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$highPriorityLeads +$todayHighPriority today',
+                style: const TextStyle(color: Colors.yellow, fontSize: 18),
+              ),
+            ]),
+          ),
+          const Icon(Icons.star, color: Colors.yellow, size: 70),
         ],
       ),
     );
   }
 
-  // Recent activity row
-  Widget recentActivity(String name, String status, String time) {
-    return ListTile(
-      leading: CircleAvatar(child: Text(name[0])),
-      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text(status),
-      trailing: Text(time),
+  Widget _statsRow() {
+    return Row(
+      children: [
+        _smallCard(freshLeads, 'Fresh Leads'),
+        const SizedBox(width: 12),
+        _smallCard(contactedLeads, 'Contacted'),
+      ],
     );
   }
 
-  void _navigate(BuildContext context, Widget screen) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  Widget _smallCard(int value, String label) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        child: Column(children: [
+          Text('$value', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          Text(label),
+        ]),
+      ),
+    );
+  }
+
+  Widget _quickActions() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _quickAction(Icons.phone, 'Start Dialing', _startDialing),
+        _quickAction(Icons.person_add, 'Add Lead', () {}),
+        _quickAction(Icons.description, 'View Script', () {}),
+        _quickAction(Icons.calendar_today, 'Tasks', () {}),
+      ],
+    );
+  }
+
+  Widget _quickAction(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        CircleAvatar(radius: 28, backgroundColor: Colors.white, child: Icon(icon, color: Colors.blue)),
+        const SizedBox(height: 8),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ]),
+    );
+  }
+
+  Widget _recentActivity(Map<String, String> item) {
+    return ListTile(
+      leading: CircleAvatar(child: Text(item['name']![0])),
+      title: Text(item['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(item['status']!),
+      trailing: Text(item['time']!),
+    );
   }
 
   void _startDialing() async {
     final Uri phoneUri = Uri(scheme: 'tel', path: '1234567890');
     if (await canLaunchUrl(phoneUri)) {
       await launchUrl(phoneUri);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot launch phone app')));
     }
   }
-
-  String userName = "Maria Shaikh"; // this can come from your login/user data
 
   String _getInitials(String name) {
-    List<String> names = name.split(' ');
-    String initials = '';
-    for (var n in names) {
-      if (n.isNotEmpty) initials += n[0].toUpperCase();
-    }
-    return initials;
+    return name
+        .split(' ')
+        .where((e) => e.isNotEmpty)
+        .map((e) => e[0].toUpperCase())
+        .join();
   }
-
 }

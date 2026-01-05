@@ -1,38 +1,31 @@
-import 'package:internship_app/models/campaign.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'campaign.dart';
 
 class CampaignRepository {
-  static List<Campaign> getCampaigns() {
-    return [
-      Campaign(
-        id: "1",
-        title: "Q4 SaaS Outreach",
-        status: "Active",
-        audience: "CTOs in FinTech",
-        called: 65,
-        target: 100,
-        startDate: DateTime(2024, 10, 1),
-        dueDate: DateTime(2024, 12, 31),
-      ),
-      Campaign(
-        id: "2",
-        title: "Cold Leads Reactivation",
-        status: "Paused",
-        audience: "Retail Managers",
-        called: 12,
-        target: 100,
-        startDate: DateTime(2024, 9, 15),
-        dueDate: DateTime(2024, 11, 15),
-      ),
-      Campaign(
-        id: "3",
-        title: "Webinar Follow-up",
-        status: "Draft",
-        audience: "Recent Registrants",
-        called: 0,
-        target: 50,
-        startDate: DateTime.now(),
-        dueDate: DateTime.now().add(const Duration(days: 7)),
-      ),
-    ];
+  static Future<List<Campaign>> fetchCampaignsForAgent(String agentId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString("jwt_token") ?? "";
+
+    final response = await http.get(
+      Uri.parse("http://10.37.119.61:3000/campaigns?agentId=$agentId"),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer $token",
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      final List data = decoded['data'] ?? [];
+
+      // Filter only campaigns assigned to this agent
+      final assigned = data.where((c) => (c['agent_count'] ?? 0) > 0).toList();
+
+      return assigned.map((c) => Campaign.fromJson(c)).toList();
+    } else {
+      throw Exception("Failed to load campaigns");
+    }
   }
 }

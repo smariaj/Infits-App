@@ -3,47 +3,76 @@ import '../models/campaign.dart';
 import '../models/campaignrepo.dart';
 
 class CampaignsScreen extends StatefulWidget {
-  const CampaignsScreen({super.key});
+  final String agentId;
+
+  const CampaignsScreen({super.key, required this.agentId});
 
   @override
   State<CampaignsScreen> createState() => _CampaignsScreenState();
 }
 
 class _CampaignsScreenState extends State<CampaignsScreen> {
-  late List<Campaign> allCampaigns;
+  List<Campaign> allCampaigns = [];
   List<Campaign> visibleCampaigns = [];
-
   String selectedFilter = "Active";
+  String searchQuery = "";
+  bool isLoading = true;
+  String errorMessage = "";
 
   @override
   void initState() {
     super.initState();
-    allCampaigns = CampaignRepository.getCampaigns();
-    _applyFilter();
+    _loadCampaigns();
+  }
+
+  Future<void> _loadCampaigns() async {
+    setState(() => isLoading = true);
+    try {
+      final campaigns =
+      await CampaignRepository.fetchCampaignsForAgent(widget.agentId);
+      setState(() {
+        allCampaigns = campaigns;
+        _applyFilter();
+        errorMessage = "";
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = "Failed to load campaigns";
+      });
+    } finally {
+      setState(() => isLoading = false);
+    }
   }
 
   void _applyFilter() {
     setState(() {
-      if (selectedFilter == "All") {
-        visibleCampaigns = allCampaigns;
-      } else if (selectedFilter == "Inactive") {
-        visibleCampaigns =
-            allCampaigns.where((c) => c.status == "Paused").toList();
-      } else {
-        visibleCampaigns =
-            allCampaigns.where((c) => c.status == selectedFilter).toList();
-      }
+      visibleCampaigns = allCampaigns.where((c) {
+        bool statusMatch;
+        if (selectedFilter == "All") {
+          statusMatch = true;
+        } else if (selectedFilter == "Inactive") {
+          statusMatch = c.status.toLowerCase() == "paused";
+        } else {
+          statusMatch = c.status.toLowerCase() == selectedFilter.toLowerCase();
+        }
+
+        bool searchMatch = c.title.toLowerCase().contains(searchQuery.toLowerCase());
+
+        return statusMatch && searchMatch;
+      }).toList();
     });
   }
 
   Color _statusColor(String status) {
-    switch (status) {
-      case "Active":
+    switch (status.toLowerCase()) {
+      case "active":
         return Colors.green;
-      case "Paused":
+      case "paused":
         return Colors.orange;
-      case "Completed":
+      case "completed":
         return Colors.blue;
+      case "draft":
+        return Colors.grey;
       default:
         return Colors.grey;
     }
@@ -51,16 +80,26 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (errorMessage.isNotEmpty) {
+      return Scaffold(
+        body: Center(child: Text(errorMessage)),
+      );
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-
       appBar: AppBar(
         title: const Text("Campaigns"),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
       ),
-
       body: Column(
         children: [
           /// 🔍 Search
@@ -77,17 +116,21 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
                   borderSide: BorderSide.none,
                 ),
               ),
+              onChanged: (val) {
+                searchQuery = val;
+                _applyFilter();
+              },
             ),
           ),
 
-          /// 🔘 Filters (scrollable – no overflow)
+          /// 🔘 Filters
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
-              children: ["Active", "Inactive", "Completed", "All"].map((filter) {
+              children: ["Active", "Inactive", "Draft", "Completed", "All"]
+                  .map((filter) {
                 final isSelected = selectedFilter == filter;
-
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
@@ -107,7 +150,9 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
 
           /// 📋 Campaign List
           Expanded(
-            child: ListView.builder(
+            child: visibleCampaigns.isEmpty
+                ? const Center(child: Text("No campaigns available"))
+                : ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: visibleCampaigns.length,
               itemBuilder: (context, index) {
@@ -157,10 +202,10 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
                         const SizedBox(height: 8),
 
                         Text(
-                          "Audience: ${campaign.audience}",
-                          style:
-                          TextStyle(color: Colors.grey.shade600),
+                          "Audience: ${campaign.demographics.isNotEmpty ? campaign.demographics : 'N/A'}",
+                          style: TextStyle(color: Colors.grey.shade600),
                         ),
+
 
                         const SizedBox(height: 12),
 
@@ -172,21 +217,21 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
                         ),
 
                         const SizedBox(height: 8),
-
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          mainAxisAlignment:
+                          MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
                                 "${campaign.called}/${campaign.target} Called"),
                             Text(
                               "Started ${campaign.startDate.day}/${campaign.startDate.month}",
-                              style: TextStyle(
-                                  color: Colors.grey.shade600),
+                              style:
+                              TextStyle(color: Colors.grey.shade600),
                             ),
                             Text(
                               "Due ${campaign.dueDate.day}/${campaign.dueDate.month}",
-                              style: TextStyle(
-                                  color: Colors.grey.shade600),
+                              style:
+                              TextStyle(color: Colors.grey.shade600),
                             ),
                           ],
                         ),
