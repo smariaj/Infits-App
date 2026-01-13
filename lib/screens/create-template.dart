@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -13,6 +15,7 @@ class CreateWhatsAppTemplateScreen extends StatefulWidget {
 class _CreateWhatsAppTemplateScreenState
     extends State<CreateWhatsAppTemplateScreen> {
   // ================= CONTROLLERS =================
+  final String baseUrl = "http://10.0.2.2:3000/api/message-templates";
 
   final TextEditingController templateNameController =
       TextEditingController();
@@ -24,10 +27,11 @@ class _CreateWhatsAppTemplateScreenState
   // ================= VARIABLES =================
 
   final List<String> variables = [
-    "{{customer_name}}",
-    "{{telecaller_name}}",
-    "{{campaign_name}}",
+    "customer_name",
+    "telecaller_name",
+    "campaign_name",
   ];
+
 
   // ================= BUILD =================
 
@@ -56,8 +60,8 @@ class _CreateWhatsAppTemplateScreenState
             _messageEditor(),
             const SizedBox(height: 12),
             _actionButtons(),
-            const SizedBox(height: 20),
-            _whatsAppPreview(),
+            // const SizedBox(height: 20),
+            // _whatsAppPreview(),
           ],
         ),
       ),
@@ -294,7 +298,7 @@ class _CreateWhatsAppTemplateScreenState
     }
   }
 
-  void _saveTemplate() {
+  Future<void> _saveTemplate() async {
     if (templateNameController.text.isEmpty ||
         messageController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -303,11 +307,36 @@ class _CreateWhatsAppTemplateScreenState
       return;
     }
 
-    // API CALL WILL GO HERE
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Template saved successfully")),
-    );
+    final payload = {
+      "name": templateNameController.text.trim(),
+      "message": messageController.text.trim(),
+      "variables": variables,
+    };
 
-    Navigator.pop(context);
+    try {
+      final response = await http.post(
+        Uri.parse(baseUrl),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 201) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Template saved successfully")),
+        );
+        Navigator.pop(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to save template")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
   }
+
 }
