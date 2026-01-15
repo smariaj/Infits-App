@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
 class Lead {
   final String name;
@@ -24,6 +27,152 @@ class AllLeadsScreen extends StatefulWidget {
 }
 
 class _AllLeadsScreenState extends State<AllLeadsScreen> {
+
+  final String baseUrl = "http://10.0.2.2:3000/api/message-templates";
+  Future<void> openTemplatePicker(
+      BuildContext context,
+      String leadName,
+      String phoneNumber,
+      ) async {
+    final response = await http.get(Uri.parse(baseUrl));
+
+    if (response.statusCode != 200) return;
+
+    final List templates = json.decode(response.body);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        return ListView.builder(
+          itemCount: templates.length,
+          itemBuilder: (context, index) {
+            final template = templates[index];
+
+            return ListTile(
+              title: Text(template["name"]),
+              subtitle: Text(
+                template["message"],
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () {
+                Navigator.pop(context);
+                openVariableDialog(
+                  context,
+                  template["id"],
+                  phoneNumber,
+                  (template["variables"] is String)
+                      ? List<String>.from(jsonDecode(template["variables"]))
+                      : List<String>.from(template["variables"]),
+
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+  void openVariableDialog(
+      BuildContext context,
+      int templateId,
+      String phoneNumber,
+      List<String> variables,
+      ) {
+    final Map<String, TextEditingController> controllers = {
+      for (var v in variables) v: TextEditingController()
+    };
+
+    showDialog(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: const Text("Fill message details"),
+          content: SingleChildScrollView(
+            child: Column(
+              children: variables.map((v) {
+                return TextField(
+                  controller: controllers[v],
+                  decoration: InputDecoration(
+                    labelText: v.replaceAll("_", " "),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+
+                Future.microtask(() {
+                  sendWhatsAppMessage(
+                    templateId,
+                    phoneNumber,
+                    variables,
+                    controllers,
+                  );
+                });
+              },
+              child: const Text("Open WhatsApp"),
+            ),
+
+          ],
+        );
+      },
+    );
+  }
+  Future<void> sendWhatsAppMessage(
+      int templateId,
+      String phoneNumber,
+      List<String> variables,
+      Map<String, TextEditingController> controllers,
+      ) async {
+    final values = variables.map((v) => controllers[v]!.text).toList();
+
+    print("VALUES: $values");
+
+    final response = await http.post(
+      Uri.parse("$baseUrl/send"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({
+        "templateId": templateId,
+        "phoneNumber": phoneNumber,
+        "values": values,
+      }),
+    );
+
+    print("STATUS: ${response.statusCode}");
+    print("BODY: ${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final url = data["whatsappUrl"];
+
+      print("WHATSAPP URL: $url");
+
+      final uri = Uri.parse(url);
+
+      final canLaunch = await canLaunchUrl(uri);
+      print("CAN LAUNCH: $canLaunch");
+
+      if (canLaunch) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        print("❌ WhatsApp not available on this device");
+      }
+    }
+  }
+
+
   List<Lead> leads = [
     Lead(
         name: 'Sarah Jenkins',
@@ -123,7 +272,11 @@ class _AllLeadsScreenState extends State<AllLeadsScreen> {
                     status: lead.status,
                     statusColor: lead.statusColor,
                     timeText: lead.timeText,
+                    onWhatsAppTap: () {
+                      openTemplatePicker(context, lead.name, "919999999999");
+                    },
                   );
+
                 },
               ),
             ),
@@ -242,6 +395,7 @@ class LeadCard extends StatelessWidget {
   final String status;
   final Color statusColor;
   final String timeText;
+  final VoidCallback onWhatsAppTap;
 
   const LeadCard({
     super.key,
@@ -250,7 +404,9 @@ class LeadCard extends StatelessWidget {
     required this.status,
     required this.statusColor,
     required this.timeText,
+    required this.onWhatsAppTap,
   });
+
 
   @override
   Widget build(BuildContext context) {
@@ -300,8 +456,10 @@ class LeadCard extends StatelessWidget {
           ),
           IconButton(
             icon: const Icon(Icons.chat_bubble, color: Colors.green),
-            onPressed: () {},
+            onPressed: onWhatsAppTap,
           ),
+
+
           IconButton(
             icon: const Icon(Icons.call, color: Colors.blue),
             onPressed: () {},
