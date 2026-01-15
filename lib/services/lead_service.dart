@@ -5,7 +5,7 @@ import 'package:internship_app/models/lead_activity_model.dart';
 
 
 class LeadService {
-  static const String baseUrl = 'http://10.35.68.59:3000';
+  static const String baseUrl = 'http://10.169.30.222:3000';
 
   static Future<List<Lead>> getLeadsByAgent(int agentId) async {
     final response = await http.get(

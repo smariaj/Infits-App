@@ -232,7 +232,7 @@ class _CallStatsScreenState extends State<CallStatsScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse("http://10.35.68.59:3000/call-stats/"),
+        Uri.parse("http://10.169.30.222:3000/call-stats/"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(callData),
       );
