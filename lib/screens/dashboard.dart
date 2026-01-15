@@ -73,7 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       radius: 30,
       backgroundColor: Colors.white,
       backgroundImage: NetworkImage(
-        "http://10.37.119.61:3000/uploads/$profileImage",
+        "http://10.35.68.59:3000/uploads/$profileImage",
       ),
       onBackgroundImageError: (_, __) {
         setState(() {

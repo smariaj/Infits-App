@@ -2,7 +2,7 @@ class Campaign {
   final String id;
   final String title;
   final String status;
-  final String demographics; // <- changed from audience to demographics
+  final String demographics;
   final int called;
   final int target;
   final DateTime startDate;

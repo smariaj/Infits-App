@@ -1,44 +1,62 @@
 import 'package:flutter/material.dart';
+import 'package:internship_app/models/lead_model.dart';
+import 'package:internship_app/services/lead_service.dart';
+import 'package:internship_app/screens/lead_and_activity_details.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-// Lead model
-class Lead {
-  final String initials;
-  final String name;
-  final String subtitle;
-  final String status;
+class FreshLeadsScreen extends StatefulWidget {
+  const FreshLeadsScreen({super.key});
 
-  Lead({
-    required this.initials,
-    required this.name,
-    required this.subtitle,
-    required this.status,
-  });
+  @override
+  State<FreshLeadsScreen> createState() => _FreshLeadsScreenState();
 }
 
-class FreshLeadsScreen extends StatelessWidget {
-  FreshLeadsScreen({super.key});
+class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
+  List<Lead> leads = [];
+  bool isLoading = true;
+  int? agentId;
 
-  // Example static data (later replace with backend fetch)
-  final List<Lead> leads = [
-    Lead(
-      initials: 'SJ',
-      name: 'Sarah Jenkins',
-      subtitle: 'Real Estate • California',
-      status: 'Just Now',
-    ),
-    Lead(
-      initials: 'MR',
-      name: 'Michael Ross',
-      subtitle: 'Insurance • 15m ago',
-      status: 'New',
-    ),
-    Lead(
-      initials: 'JL',
-      name: 'Jessica Liu',
-      subtitle: 'Tech Inquiry • 1h ago',
-      status: 'Callback',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    fetchFreshLeads();
+  }
+
+  Future<void> fetchFreshLeads() async {
+    setState(() => isLoading = true);
+
+    try {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      agentId = prefs.getInt("user_id");
+
+      if (agentId == null) {
+        setState(() => isLoading = false);
+        return;
+      }
+
+      final allLeads = await LeadService.getLeadsByAgent(agentId!);
+
+      setState(() {
+        leads = allLeads.where((l) => l.status == 'New Lead').toList();
+        isLoading = false;
+      });
+    } catch (e) {
+      print("Error fetching fresh leads: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> makeCall(String phone) async {
+    final Uri callUri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(callUri)) {
+      await launchUrl(callUri);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Cannot open dialer")),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +128,6 @@ class FreshLeadsScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
 
               // Filter Chips
@@ -123,7 +140,6 @@ class FreshLeadsScreen extends StatelessWidget {
                   _filterChip('Newest'),
                 ],
               ),
-
               const SizedBox(height: 20),
 
               // Today's Queue
@@ -142,30 +158,57 @@ class FreshLeadsScreen extends StatelessWidget {
                   ),
                 ],
               ),
-
               const SizedBox(height: 12),
 
-              // Dynamic Lead List
+              // Lead List
               Expanded(
-                child: ListView.builder(
+                child: isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : leads.isEmpty
+                    ? const Center(
+                  child: Text("No fresh leads assigned to you"),
+                )
+                    : ListView.builder(
                   itemCount: leads.length,
                   itemBuilder: (context, index) {
                     final lead = leads[index];
-                    return _leadCard(
-                      initials: lead.initials,
-                      name: lead.name,
-                      subtitle: lead.subtitle,
-                      status: lead.status,
-                      primaryButton: 'Call Lead',
+
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => LeadDetailsScreen(
+                              lead: lead,
+                              onLeadUpdated: fetchFreshLeads,
+                            ),
+                          ),
+                        );
+                      },
+                      child: _leadCard(
+                        initials: lead.name.isNotEmpty
+                            ? lead.name
+                            .trim()
+                            .split(' ')
+                            .map((e) => e[0])
+                            .take(2)
+                            .join()
+                            : '',
+                        name: lead.name,
+                        subtitle:
+                        '${lead.company ?? 'Unknown'} • ${lead.lastActivity ?? 'N/A'}',
+                        status: 'New',
+                        primaryButton: 'Call Lead',
+                        onCallPressed: () => makeCall(lead.phone),
+                      ),
                     );
                   },
                 ),
               ),
 
-              // End text
-              Center(
+              const Center(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(vertical: 12),
                   child: Text(
                     "You've reached the end of the list",
                     style: TextStyle(color: Colors.grey),
@@ -182,10 +225,13 @@ class FreshLeadsScreen extends StatelessWidget {
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.dashboard), label: 'Dashboard'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Leads'),
-          BottomNavigationBarItem(icon: Icon(Icons.campaign), label: 'Campaigns'),
-          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Call Stats'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.campaign), label: 'Campaigns'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.bar_chart), label: 'Call Stats'),
         ],
       ),
     );
@@ -216,6 +262,7 @@ class FreshLeadsScreen extends StatelessWidget {
     required String subtitle,
     required String status,
     required String primaryButton,
+    required VoidCallback onCallPressed,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -250,7 +297,8 @@ class FreshLeadsScreen extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.green.shade100,
                   borderRadius: BorderRadius.circular(20),
@@ -267,7 +315,7 @@ class FreshLeadsScreen extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {},
+                  onPressed: onCallPressed,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
                   ),

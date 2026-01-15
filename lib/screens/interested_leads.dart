@@ -1,155 +1,179 @@
 import 'package:flutter/material.dart';
+import 'package:internship_app/models/lead_model.dart';
+import 'package:internship_app/services/lead_service.dart';
+import 'package:internship_app/screens/lead_and_activity_details.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-// Lead model
-class Lead {
-  final String initials;
-  final String name;
-  final String subtitle;
-  final String status;
+class InterestedLeadsScreen extends StatefulWidget {
+  const InterestedLeadsScreen({super.key});
 
-  Lead({
-    required this.initials,
-    required this.name,
-    required this.subtitle,
-    required this.status,
-  });
+  @override
+  State<InterestedLeadsScreen> createState() => _InterestedLeadsScreenState();
 }
 
-class InterestedLeadsScreen extends StatelessWidget {
-  InterestedLeadsScreen({super.key});
+class _InterestedLeadsScreenState extends State<InterestedLeadsScreen> {
+  List<Lead> leads = [];
+  List<Lead> filteredLeads = [];
+  bool isLoading = true;
+  int? agentId;
+  String searchQuery = '';
 
-  // Example static data (later replace with backend fetch)
-  final List<Lead> leads = [
-    Lead(
-      initials: 'SJ',
-      name: 'Sarah Jenkins',
-      subtitle: 'Home Loan . 2 mins ago',
-      status: 'Hot',
-    ),
-    Lead(
-      initials: 'MR',
-      name: 'Michael Ross',
-      subtitle: 'Refinanacing . 1 hour ago',
-      status: 'Warm',
-    ),
-    Lead(
-      initials: 'JL',
-      name: 'Jessica Liu',
-      subtitle: 'Auto Loan. 1 hour ago',
-      status: 'Cool',
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    loadUserAndLeads();
+  }
+
+  Future<void> loadUserAndLeads() async {
+    final prefs = await SharedPreferences.getInstance();
+    agentId = prefs.getInt("user_id");
+
+    if (agentId != null) {
+      fetchInterestedLeads();
+    } else {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> fetchInterestedLeads() async {
+    try {
+      final allLeads = await LeadService.getLeadsByAgent(agentId!);
+      final interested = allLeads
+          .where((l) => l.status.toLowerCase().contains('interested'))
+          .toList();
+
+      setState(() {
+        leads = interested;
+        filteredLeads = interested;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+    }
+  }
+
+  void filterLeads(String value) {
+    setState(() {
+      searchQuery = value;
+      filteredLeads = leads
+          .where((l) =>
+          l.name.toLowerCase().contains(searchQuery.toLowerCase()))
+          .toList();
+    });
+  }
+
+  Future<void> makeCall(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> sendEmail(String email) async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+    );
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> convertLead(Lead lead) async {
+    await LeadService.updateLeadStatus(lead.id, 'converted');
+    fetchInterestedLeads();
+  }
+
+  String getInitials(String name) {
+    final parts = name.split(' ');
+    if (parts.length == 1) return parts[0][0];
+    return parts[0][0] + parts.last[0];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
-
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        titleSpacing: 16,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            SizedBox(height: 2),
-            Text(
-              'Interested Leads',
-              style: TextStyle(
-                color: Colors.black,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+        title: const Text(
+          'Interested Leads',
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+        ),
+        leading: const BackButton(color: Colors.black),
+        actions: const [
+          Padding(
+            padding: EdgeInsets.only(right: 16),
+            child: Icon(Icons.tune, color: Colors.black),
+          )
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            // 🔍 Search
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TextField(
+                onChanged: filterLeads,
+                decoration: const InputDecoration(
+                  icon: Icon(Icons.search),
+                  hintText: 'Search leads by name...',
+                  border: InputBorder.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // 🏷 Filter Pills
+            Row(
+              children: [
+                _pill('All', selected: true),
+                const SizedBox(width: 8),
+                _pill('High Interest'),
+                const SizedBox(width: 8),
+                _pill('Mortgage'),
+                const SizedBox(width: 8),
+                _pill('Insurance'),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 📋 Leads
+            Expanded(
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filteredLeads.isEmpty
+                  ? const Center(
+                child: Text('No interested leads found'),
+              )
+                  : ListView.builder(
+                itemCount: filteredLeads.length,
+                itemBuilder: (context, index) {
+                  final lead = filteredLeads[index];
+                  return _leadCard(lead);
+                },
               ),
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.linear_scale, color: Colors.black),
-            onPressed: () {},
-          ),
-          const SizedBox(width: 8),
-          const CircleAvatar(
-            radius: 16,
-            backgroundColor: Colors.blue,
-            child: Text(
-              'AM',
-              style: TextStyle(color: Colors.white, fontSize: 12),
-            ),
-          ),
-          const SizedBox(width: 16),
-        ],
       ),
-
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Search Bar
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const TextField(
-                  decoration: InputDecoration(
-                    icon: Icon(Icons.search),
-                    hintText: 'Search by name...',
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Filter Chips
-              Row(
-                children: [
-                  _filterChip('All', selected: true),
-                  const SizedBox(width: 4),
-                  _filterChip('High Interest'),
-                  const SizedBox(width: 4),
-                  _filterChip('Mortgage'),
-                  const SizedBox(width: 4),
-                  _filterChip('Insurance'),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-
-              // Dynamic Lead List
-              Expanded(
-                child: ListView.builder(
-                  itemCount: leads.length,
-                  itemBuilder: (context, index) {
-                    final lead = leads[index];
-                    return _leadCard(
-                      initials: lead.initials,
-                      name: lead.name,
-                      subtitle: lead.subtitle,
-                      status: lead.status,
-                      primaryButton: 'Call Lead',
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-
       bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 1,
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
         items: const [
           BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Leads'),
+              icon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.people), label: 'Leads'),
           BottomNavigationBarItem(
               icon: Icon(Icons.campaign), label: 'Campaigns'),
           BottomNavigationBarItem(
@@ -159,12 +183,12 @@ class InterestedLeadsScreen extends StatelessWidget {
     );
   }
 
-  // 🔹 Filter Chip Widget
-  static Widget _filterChip(String text, {bool selected = false}) {
+  // 🔹 Filter pill
+  Widget _pill(String text, {bool selected = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: selected ? Colors.blue : Colors.white,
+        color: selected ? Colors.black : Colors.white,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -177,169 +201,120 @@ class InterestedLeadsScreen extends StatelessWidget {
     );
   }
 
-  // 🔹 Lead Card Widget
-  static Widget _leadCard({
-    required String initials,
-    required String name,
-    required String subtitle,
-    required String status,
-    required String primaryButton,
-  }) {
-    // 1️⃣ Determine status color
-    Color statusColor;
-    switch (status) {
-      case 'Hot':
-        statusColor = Colors.red.shade100;
-        break;
-      case 'Warm':
-        statusColor = Colors.orange.shade100;
-        break;
-      case 'Cool':
-        statusColor = Colors.blue.shade100;
-        break;
-      default:
-        statusColor = Colors.green.shade100;
-    }
-
-    // 2️⃣ Determine action buttons
-    List<Widget> actionButtons = [];
-
-    if (status == 'Hot' || status == 'Warm') {
-      // 4 buttons in 2 rows
-      actionButtons = [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.call, size: 16),
-                label: const Text('Call'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                ),
-              ),
+  // 🔹 Lead Card
+  Widget _leadCard(Lead lead) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LeadDetailsScreen(
+              lead: lead,
+              onLeadUpdated: fetchInterestedLeads,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.email, size: 16),
-                label: const Text('Email'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text('Nurture Lead'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text('Convert'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ];
-    } else if (status == 'Cool') {
-      // 2 buttons in 1 row
-      actionButtons = [
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text('Re-Engage'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {},
-                child: const Text('Archive'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[200],
-                  foregroundColor: Colors.black,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ];
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                backgroundColor: Colors.orange.shade100,
-                child: Text(initials),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: const TextStyle(
-                        fontSize: 12, color: Colors.grey)),
-                  ],
-                ),
-              ),
-              // Status container
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  status,
-                  style: const TextStyle(fontSize: 10),
-                ),
-              ),
-            ],
           ),
-          const SizedBox(height: 12),
-          // 3️⃣ Buttons
-          Column(children: actionButtons),
-        ],
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: Colors.grey.shade300,
+                  child: Text(getInitials(lead.name)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lead.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        lead.company ?? '',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Text(
+                    'Interested',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.green),
+                  ),
+                )
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => makeCall(lead.phone),
+                    icon: const Icon(Icons.call, size: 16),
+                    label: const Text('Call'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        sendEmail(lead.email ?? ''),
+                    icon: const Icon(Icons.email, size: 16),
+                    label: const Text('Email'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LeadDetailsScreen(
+                            lead: lead,
+                            onLeadUpdated: fetchInterestedLeads,
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Nurture Lead'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => convertLead(lead),
+                    child: const Text('Convert →'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

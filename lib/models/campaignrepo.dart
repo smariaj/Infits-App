@@ -9,7 +9,7 @@ class CampaignRepository {
     final token = prefs.getString("jwt_token") ?? "";
 
     final response = await http.get(
-      Uri.parse("http://10.37.119.61:3000/campaigns?agentId=$agentId"),
+      Uri.parse("http://10.35.68.59:3000/campaigns?agentId=$agentId"),
       headers: {
         "Content-Type": "application/json",
         "Authorization": "Bearer $token",
