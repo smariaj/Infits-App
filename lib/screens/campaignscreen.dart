@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/campaign.dart';
 import '../models/campaignrepo.dart';
+import 'campaign_leads_screen.dart';
+import 'package:internship_app/screens/campaign_progess_notifier.dart';
 
 class CampaignsScreen extends StatefulWidget {
   final String agentId;
@@ -19,17 +21,35 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
   bool isLoading = true;
   String errorMessage = "";
 
+  late VoidCallback _campaignListener;
+
   @override
   void initState() {
     super.initState();
+
     _loadCampaigns();
+
+    /// ✅ Proper listener
+    _campaignListener = () {
+      _loadCampaigns();
+    };
+
+    campaignProgressNotifier.addListener(_campaignListener);
+  }
+
+  @override
+  void dispose() {
+    campaignProgressNotifier.removeListener(_campaignListener);
+    super.dispose();
   }
 
   Future<void> _loadCampaigns() async {
     setState(() => isLoading = true);
+
     try {
       final campaigns =
       await CampaignRepository.fetchCampaignsForAgent(widget.agentId);
+
       setState(() {
         allCampaigns = campaigns;
         _applyFilter();
@@ -45,22 +65,22 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
   }
 
   void _applyFilter() {
-    setState(() {
-      visibleCampaigns = allCampaigns.where((c) {
-        bool statusMatch;
-        if (selectedFilter == "All") {
-          statusMatch = true;
-        } else if (selectedFilter == "Inactive") {
-          statusMatch = c.status.toLowerCase() == "paused";
-        } else {
-          statusMatch = c.status.toLowerCase() == selectedFilter.toLowerCase();
-        }
+    visibleCampaigns = allCampaigns.where((c) {
+      bool statusMatch;
+      if (selectedFilter == "All") {
+        statusMatch = true;
+      } else if (selectedFilter == "Inactive") {
+        statusMatch = c.status.toLowerCase() == "paused";
+      } else {
+        statusMatch =
+            c.status.toLowerCase() == selectedFilter.toLowerCase();
+      }
 
-        bool searchMatch = c.title.toLowerCase().contains(searchQuery.toLowerCase());
+      bool searchMatch =
+      c.title.toLowerCase().contains(searchQuery.toLowerCase());
 
-        return statusMatch && searchMatch;
-      }).toList();
-    });
+      return statusMatch && searchMatch;
+    }).toList();
   }
 
   Color _statusColor(String status) {
@@ -118,7 +138,7 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
               ),
               onChanged: (val) {
                 searchQuery = val;
-                _applyFilter();
+                setState(_applyFilter);
               },
             ),
           ),
@@ -137,8 +157,10 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
                     label: Text(filter),
                     selected: isSelected,
                     onSelected: (_) {
-                      selectedFilter = filter;
-                      _applyFilter();
+                      setState(() {
+                        selectedFilter = filter;
+                        _applyFilter();
+                      });
                     },
                   ),
                 );
@@ -158,84 +180,93 @@ class _CampaignsScreenState extends State<CampaignsScreen> {
               itemBuilder: (context, index) {
                 final campaign = visibleCampaigns[index];
 
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        /// Title + Status
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                campaign.title,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                return InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CampaignLeadsScreen(
+                          agentId: int.parse(widget.agentId),
+                          campaignId: campaign.id,
+                          campaignTitle: campaign.title,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  campaign.title,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: _statusColor(campaign.status)
-                                    .withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: _statusColor(campaign.status)
+                                      .withOpacity(0.1),
+                                  borderRadius:
+                                  BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  campaign.status,
+                                  style: TextStyle(
+                                    color:
+                                    _statusColor(campaign.status),
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ),
-                              child: Text(
-                                campaign.status,
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Audience: ${campaign.demographics.isNotEmpty ? campaign.demographics : 'N/A'}",
+                            style: TextStyle(
+                                color: Colors.grey.shade600),
+                          ),
+                          const SizedBox(height: 12),
+                          LinearProgressIndicator(
+                            value: campaign.progress,
+                            minHeight: 6,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                  "${campaign.called}/${campaign.target} Called"),
+                              Text(
+                                "Started ${campaign.startDate.day}/${campaign.startDate.month}",
                                 style: TextStyle(
-                                  color: _statusColor(campaign.status),
-                                  fontSize: 12,
-                                ),
+                                    color: Colors.grey.shade600),
                               ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        Text(
-                          "Audience: ${campaign.demographics.isNotEmpty ? campaign.demographics : 'N/A'}",
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-
-
-                        const SizedBox(height: 12),
-
-                        /// Progress
-                        LinearProgressIndicator(
-                          value: campaign.progress,
-                          minHeight: 6,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment:
-                          MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                                "${campaign.called}/${campaign.target} Called"),
-                            Text(
-                              "Started ${campaign.startDate.day}/${campaign.startDate.month}",
-                              style:
-                              TextStyle(color: Colors.grey.shade600),
-                            ),
-                            Text(
-                              "Due ${campaign.dueDate.day}/${campaign.dueDate.month}",
-                              style:
-                              TextStyle(color: Colors.grey.shade600),
-                            ),
-                          ],
-                        ),
-                      ],
+                              Text(
+                                "Due ${campaign.dueDate.day}/${campaign.dueDate.month}",
+                                style: TextStyle(
+                                    color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );

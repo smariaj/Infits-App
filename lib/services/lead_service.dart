@@ -5,7 +5,7 @@ import 'package:internship_app/models/lead_activity_model.dart';
 
 
 class LeadService {
-  static const String baseUrl = 'http://10.169.30.222:3000';
+  static const String baseUrl = 'http://10.169.30.216:3000';
 
   static Future<List<Lead>> getLeadsByAgent(int agentId) async {
     final response = await http.get(
@@ -74,6 +74,30 @@ class LeadService {
     if (response.statusCode != 200) {
       print('Update status error: ${response.statusCode} - ${response.body}');
       throw Exception('Failed to update lead status');
+    }
+  }
+
+  /* =========================
+     GET LEADS BY AGENT + CAMPAIGN
+  ========================= */
+  static Future<List<Lead>> getLeadsByAgentAndCampaign({
+    required int agentId,
+    required String campaignId,
+  }) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/leads?agent_id=$agentId&campaign_id=$campaignId',
+      ),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      return (decoded['data'] as List)
+          .map((e) => Lead.fromJson(e))
+          .toList();
+    } else {
+      throw Exception('Failed to fetch campaign leads');
     }
   }
 

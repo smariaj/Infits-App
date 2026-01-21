@@ -4,6 +4,7 @@ import 'package:internship_app/services/lead_service.dart';
 import 'package:internship_app/screens/lead_and_activity_details.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:internship_app/screens/campaign_progess_notifier.dart';
 
 class InterestedLeadsScreen extends StatefulWidget {
   const InterestedLeadsScreen({super.key});
@@ -63,12 +64,42 @@ class _InterestedLeadsScreenState extends State<InterestedLeadsScreen> {
     });
   }
 
-  Future<void> makeCall(String phone) async {
-    final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+  Future<void> makeCall(Lead lead) async {
+    final phone = lead.phone;
+    if (phone.isEmpty) return;
+
+    final Uri callUri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(callUri)) {
+      final launched = await launchUrl(callUri);
+      if (launched) {
+        // Log call activity
+        final prefs = await SharedPreferences.getInstance();
+        final userName = prefs.getString("user_name") ?? "Unknown";
+
+        await LeadService.logCallActivity(
+          leadId: lead.id,
+          userName: userName,
+        );
+
+        // Notify campaign screen to refresh
+        if (lead.campaignId != null) {
+          final intId = int.tryParse(lead.campaignId!);
+          if (intId != null) {
+            campaignProgressNotifier.markUpdated(intId);
+          }
+        }
+
+        // Refresh Interested Leads list
+        fetchInterestedLeads();
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Cannot open dialer")),
+      );
     }
   }
+
+
 
   Future<void> sendEmail(String email) async {
     final uri = Uri(
@@ -269,7 +300,7 @@ class _InterestedLeadsScreenState extends State<InterestedLeadsScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => makeCall(lead.phone),
+                    onPressed: () => makeCall(lead),
                     icon: const Icon(Icons.call, size: 16),
                     label: const Text('Call'),
                   ),

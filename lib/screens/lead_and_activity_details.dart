@@ -4,8 +4,14 @@ import 'package:internship_app/models/lead_model.dart';
 import 'package:internship_app/models/lead_activity_model.dart';
 import 'package:internship_app/services/lead_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
+import 'package:internship_app/screens//campaign_progess_notifier.dart';
+
 import 'dart:convert';
+
+// Import WhatsAppService
+import 'package:internship_app/screens/all_leads_overview.dart';
 
 class LeadDetailsScreen extends StatefulWidget {
   final Lead lead;
@@ -92,7 +98,6 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
     }
   }
 
-
   Future<void> _updateLeadStatus(String newStatus) async {
     final oldStatus = widget.lead.status;
 
@@ -129,8 +134,6 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
     }
   }
 
-
-
   void _showAddNoteDialog() {
     TextEditingController noteController = TextEditingController();
 
@@ -165,105 +168,121 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
     );
   }
 
-  void _showAddCallDialog() {
-    TextEditingController callController = TextEditingController(
-      text:
-      'Call to ${widget.lead.phone} at ${DateFormat('hh:mm a').format(DateTime.now())}',
-    );
+  Future<void> _logPhoneCall() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userName = prefs.getString("user_name") ?? "Unknown";
 
-    showDialog(
+    TextEditingController notesController = TextEditingController();
+    DateTime? callTime;
+    Duration? callDuration;
+
+    // Ask for call details BEFORE making the call
+    final details = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Call Activity'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: callController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Enter call details...',
-                border: OutlineInputBorder(),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Log Call'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('You are about to call: ${widget.lead.phone}'),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: notesController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      hintText: 'Call purpose or notes (optional)...',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setState(() => callTime = DateTime.now());
+                        },
+                        icon: const Icon(Icons.timer, size: 16),
+                        label: Text(callTime == null
+                            ? 'Set call time'
+                            : DateFormat('hh:mm a').format(callTime!)
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                    ],
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            Text('Call to: ${widget.lead.phone}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (callController.text.isNotEmpty) {
-                await _addActivity(
-                  'call',
-                  'Outgoing Call',
-                  callController.text,
-                );
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Call logged successfully')),
-                );
-
-                await loadActivities();
-              }
-            },
-            child: const Text('Log Call'),
-          ),
-        ],
-      ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, null),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context, {
+                      'notes': notesController.text,
+                      'callTime': callTime,
+                      'duration': callDuration,
+                    });
+                  },
+                  child: const Text('Log & Call'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
+
+    if (details != null) {
+      // Open phone dialer
+      final uri = Uri(scheme: 'tel', path: widget.lead.phone);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+
+        // Log the call activity
+        String description = 'Called ${widget.lead.phone}';
+        if (details['notes'] != null && details['notes'].toString().isNotEmpty) {
+          description += '\nNotes: ${details['notes']}';
+        }
+        if (details['duration'] != null) {
+          final duration = details['duration'] as Duration;
+          description += '\nDuration: ${duration.inMinutes}m ${duration.inSeconds % 60}s';
+        }
+
+        await _addActivity('call', 'Outgoing Call', description);
+
+        // Also log via LeadService for backend
+        try {
+          await LeadService.logCallActivity(
+            leadId: widget.lead.id,
+            userName: userName,
+          );
+
+          // If the lead is part of a campaign, notify the campaign screen
+          // If the lead is part of a campaign, notify the campaign screen
+          if (widget.lead.campaignId != null) {
+            final intId = int.tryParse(widget.lead.campaignId!);
+            if (intId != null) {
+              campaignProgressNotifier.markUpdated(intId);
+            }
+          }
+
+
+        } catch (e) {
+          print('Error in LeadService.logCallActivity: $e');
+        }
+      }
+    }
   }
 
-
-  void _showAddMessageDialog() {
-    TextEditingController messageController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Send Message'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: messageController,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                hintText: 'Enter your message...',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text('To: ${widget.lead.phone}'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (messageController.text.isNotEmpty) {
-                _addActivity('email', 'Message Sent', messageController.text);
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Message logged successfully')),
-                );
-              }
-            },
-            child: const Text('Send'),
-          ),
-        ],
-      ),
-    );
+  void _showWhatsAppTemplatePicker() async {
+    await WhatsAppService.openTemplatePicker(context, widget.lead.name, widget.lead.phone);
   }
 
   void _showStatusChangeDialog() {
@@ -318,10 +337,19 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
     );
   }
 
-  void _makePhoneCall() {
-    // For actual phone calls, you'd use url_launcher package
-    // For now, we'll just log the call activity
-    _showAddCallDialog();
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'New Lead':
+        return Colors.blue;
+      case 'Interested':
+        return Colors.green;
+      case 'Call Back':
+        return Colors.orange;
+      case 'Converted':
+        return Colors.purple;
+      default:
+        return Colors.grey;
+    }
   }
 
   @override
@@ -337,46 +365,210 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
         ),
         title: const Text(
           'Lead Details',
-          style: TextStyle(color: Colors.black),
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.edit, color: Colors.black),
             onPressed: () {
-              // Edit lead functionality - you can implement this later
+              // Edit lead functionality
             },
-          )
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: 1,
-        selectedItemColor: Colors.blue,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.dashboard), label: 'Dashboard'),
-          BottomNavigationBarItem(icon: Icon(Icons.people), label: 'Leads'),
-          BottomNavigationBarItem(icon: Icon(Icons.campaign), label: 'Campaigns'),
-          BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.black),
+            onPressed: loadActivities,
+          ),
         ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _profileCard(),
-            const SizedBox(height: 16),
-            _actionButtons(),
+            // Profile Card - CENTERED
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircleAvatar(
+                    radius: 36,
+                    backgroundColor: Colors.blue,
+                    child: Icon(Icons.person, size: 40, color: Colors.white),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    widget.lead.name,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.lead.phone,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (widget.lead.email != null && widget.lead.email!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.lead.email!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  if (widget.lead.company != null && widget.lead.company!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.lead.company!,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  // Status Badge - Centered
+                  Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(widget.lead.status).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        widget.lead.status,
+                        style: TextStyle(
+                          color: _getStatusColor(widget.lead.status),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             const SizedBox(height: 20),
-            _activityHeader(),
+
+            // Quick Actions - CENTERED
+            const Center(
+              child: Text(
+                'Quick Actions',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                ),
+              ),
+            ),
             const SizedBox(height: 12),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _actionButton(
+                  icon: Icons.call,
+                  label: 'Call',
+                  color: Colors.blue,
+                  onTap: _logPhoneCall,
+                ),
+                const SizedBox(width: 16),
+                _actionButton(
+                  icon: Icons.chat,
+                  label: 'WhatsApp',
+                  color: Colors.green,
+                  onTap: _showWhatsAppTemplatePicker,
+                ),
+                const SizedBox(width: 16),
+                _actionButton(
+                  icon: Icons.sync,
+                  label: 'Status',
+                  color: Colors.orange,
+                  onTap: _showStatusChangeDialog,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Activity History
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Activity History',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                TextButton(
+                  onPressed: loadActivities,
+                  child: const Text(
+                    'Refresh',
+                    style: TextStyle(
+                      color: Colors.blue,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
             if (isLoading)
               const Center(child: CircularProgressIndicator())
             else if (activities.isEmpty)
-              const Center(child: Text("No activities found"))
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(
+                    children: [
+                      Icon(Icons.history, size: 50, color: Colors.grey),
+                      SizedBox(height: 8),
+                      Text(
+                        'No activities yet',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              )
             else
               Column(
                 children: activities.map(_activityItem).toList(),
               ),
+
             const SizedBox(height: 80),
           ],
         ),
@@ -384,203 +576,75 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.blue,
         onPressed: _showAddNoteDialog,
-        child: const Icon(Icons.note_add),
+        child: const Icon(Icons.note_add, color: Colors.white),
       ),
     );
   }
 
-  Widget _profileCard() {
-    Color statusColor;
-    switch (widget.lead.status) {
-      case 'New Lead':
-        statusColor = Colors.blue;
-        break;
-      case 'Interested':
-        statusColor = Colors.green;
-        break;
-      case 'Call Back':
-        statusColor = Colors.orange;
-        break;
-      case 'Converted':
-        statusColor = Colors.purple;
-        break;
-      default:
-        statusColor = Colors.grey;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              const CircleAvatar(
-                radius: 36,
-                backgroundColor: Colors.grey,
-                child: Icon(Icons.person, size: 40, color: Colors.white),
-              ),
-              Positioned(
-                bottom: 2,
-                right: 2,
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Colors.green,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                ),
-              )
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            widget.lead.name,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.lead.phone,
-            style: const TextStyle(color: Colors.grey),
-          ),
-          if (widget.lead.email != null && widget.lead.email!.isNotEmpty) ...[
-            const SizedBox(height: 4),
+  Widget _actionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 90,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2), width: 1),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 8),
             Text(
-              widget.lead.email!,
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
             ),
           ],
-          if (widget.lead.company != null && widget.lead.company!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              widget.lead.company!,
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _chip(widget.lead.status, statusColor.withOpacity(0.15), statusColor),
-              const SizedBox(width: 8),
-              _chip(
-                  'Last: ${widget.lead.lastActivity}',
-                  Colors.grey.withOpacity(0.15),
-                  Colors.grey
-              ),
-            ],
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(String text, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(color: fg, fontSize: 12),
-      ),
-    );
-  }
-
-  Widget _actionButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: GestureDetector(
-            onTap: _makePhoneCall,
-            child: _actionButton(Icons.call, 'Call', Colors.blue),
-          ),
         ),
-        Expanded(
-          child: GestureDetector(
-            onTap: _showAddMessageDialog,
-            child: _actionButton(Icons.chat, 'Message', Colors.green),
-          ),
-        ),
-        Expanded(
-          child: GestureDetector(
-            onTap: _showStatusChangeDialog,
-            child: _actionButton(Icons.sync, 'Status', Colors.orange),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _actionButton(IconData icon, String label, Color color) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(height: 6),
-          Text(label, style: TextStyle(color: color)),
-        ],
-      ),
-    );
-  }
-
-  Widget _activityHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text(
-          'Activity History',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-        TextButton(
-          onPressed: loadActivities,
-          child: const Text(
-            'Refresh',
-            style: TextStyle(color: Colors.blue),
-          ),
-        )
-      ],
     );
   }
 
   Widget _activityItem(LeadActivity activity) {
     IconData icon;
     Color color;
+    String typeLabel;
 
     switch (activity.type) {
       case 'call':
         icon = Icons.call;
         color = Colors.blue;
+        typeLabel = 'Call';
         break;
       case 'email':
         icon = Icons.email;
         color = Colors.purple;
+        typeLabel = 'Message';
         break;
       case 'note':
         icon = Icons.note;
         color = Colors.orange;
+        typeLabel = 'Note';
         break;
       case 'status':
         icon = Icons.sync;
         color = Colors.green;
+        typeLabel = 'Status';
         break;
       default:
         icon = Icons.info;
         color = Colors.grey;
+        typeLabel = 'Activity';
     }
 
     return Container(
@@ -589,12 +653,24 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            backgroundColor: color.withOpacity(0.15),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
             child: Icon(icon, color: color, size: 18),
           ),
           const SizedBox(width: 12),
@@ -607,28 +683,65 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
                   children: [
                     Text(
                       activity.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.black,
+                      ),
                     ),
-                    Text(
-                      DateFormat('hh:mm a').format(activity.createdAt),
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        typeLabel,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 if (activity.description != null && activity.description!.isNotEmpty)
                   Text(
                     activity.description!,
-                    style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      fontSize: 13,
+                    ),
                   ),
-                const SizedBox(height: 4),
-                Text(
-                  'By: ${activity.user} • ${DateFormat('dd MMM yyyy').format(activity.createdAt)}',
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.person, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      activity.user,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Icon(Icons.access_time, size: 12, color: Colors.grey),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormat('dd MMM yyyy • hh:mm a').format(activity.createdAt),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'create-template.dart';
 
 class MessageTemplate {
   final String title;
   final String content;
-  final String type; // "Follow Up", "Cold Call", "Meeting"
 
   MessageTemplate({
     required this.title,
     required this.content,
-    required this.type,
   });
 }
+
 
 class MessageTemplateScreen extends StatefulWidget {
   const MessageTemplateScreen({super.key});
@@ -20,27 +22,35 @@ class MessageTemplateScreen extends StatefulWidget {
 }
 
 class _MessageTemplateScreenState extends State<MessageTemplateScreen> {
-  List<MessageTemplate> templates = [
-    MessageTemplate(
-        title: "Initial Follow Up",
-        content:
-        "Hi [name], this is to follow up on our previous conversation...",
-        type: "Follow Up"),
-    MessageTemplate(
-        title: "Voicemail Drop",
-        content:
-        "Hi [name], just leaving you a quick voicemail regarding...",
-        type: "Cold Call"),
-    MessageTemplate(
-        title: "Re-engagement",
-        content: "Hi [name], it's been a while, wanted to reconnect...",
-        type: "Meeting"),
-    MessageTemplate(
-        title: "Follow Up Reminder",
-        content:
-        "Hi [name], reminding you about our scheduled follow up...",
-        type: "Follow Up"),
-  ];
+  final String baseUrl = "http://10.169.30.216:3000/api/message-templates";
+
+  List<MessageTemplate> templates = [];
+
+  Future<void> _loadTemplates() async {
+    try {
+      final response = await http.get(Uri.parse(baseUrl));
+
+      if (response.statusCode == 200) {
+        final List list = json.decode(response.body);
+
+        setState(() {
+          templates = list
+              .map((e) => MessageTemplate(
+            title: e["name"].toString(),
+            content: e["message"].toString(),
+          ))
+              .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint("Failed to load templates: $e");
+    }
+  }
+  @override
+  void initState() {
+    super.initState();
+    _loadTemplates();
+  }
 
   String selectedFilter = "All";
   String searchQuery = "";
@@ -49,9 +59,7 @@ class _MessageTemplateScreenState extends State<MessageTemplateScreen> {
 
   List<MessageTemplate> get filteredTemplates {
     List<MessageTemplate> temp = templates;
-    if (selectedFilter != "All") {
-      temp = temp.where((t) => t.type == selectedFilter).toList();
-    }
+
     if (searchQuery.isNotEmpty) {
       temp = temp
           .where((t) =>
@@ -61,6 +69,7 @@ class _MessageTemplateScreenState extends State<MessageTemplateScreen> {
     }
     return temp;
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -155,6 +164,11 @@ class _MessageTemplateScreenState extends State<MessageTemplateScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           // Action when + is pressed
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const CreateWhatsAppTemplateScreen()),
+          );
         },
         backgroundColor: Colors.blue,
         child: const Icon(Icons.add),

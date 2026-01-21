@@ -7,6 +7,7 @@ class Lead {
   final String? company;
   String status;
   final String lastActivity;
+  final String campaignId;
 
   Lead({
     required this.id,
@@ -16,6 +17,7 @@ class Lead {
     this.company,
     required this.status,
     required this.lastActivity,
+    required this.campaignId,
   });
 
   factory Lead.fromJson(Map<String, dynamic> json) {
@@ -27,6 +29,7 @@ class Lead {
       company: json['company'],
       status: json['status'],
       lastActivity: json['last_activity'],
+      campaignId: json['campaign_id'].toString(),
     );
   }
 }

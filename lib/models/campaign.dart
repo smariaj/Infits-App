@@ -29,11 +29,12 @@ class Campaign {
       title: json['campaign_name'] ?? '',
       status: json['status'] ?? 'Draft',
       demographics: json['demographics']?.toString() ?? '',
-      called: json['called'] ?? 0,
-      target: json['target'] ?? 100,
+      called: int.tryParse(json['called']?.toString() ?? '0') ?? 0,
+      target: int.tryParse(json['target']?.toString() ?? '100') ?? 100,
+
       startDate: DateTime.parse(json['start_date']),
       dueDate: DateTime.parse(json['end_date']),
-      agentCount: json['agent_count'] ?? 0,
+      agentCount: int.tryParse(json['agent_count']?.toString() ?? '0') ?? 0,
     );
   }
 }

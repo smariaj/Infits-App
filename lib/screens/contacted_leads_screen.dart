@@ -5,6 +5,7 @@ import 'package:internship_app/screens/lead_and_activity_details.dart';
 import 'package:internship_app/services/lead_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:internship_app/screens/campaign_progess_notifier.dart';
 
 class ContactedLeadsScreen extends StatefulWidget {
   const ContactedLeadsScreen({super.key});
@@ -90,16 +91,40 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
     fetchContactedLeads();
   }
 
-  Future<void> callNow(Lead lead) async {
+  Future<void> callNow(Lead lead, {String? campaignId}) async {
     final phone = lead.phone;
     if (phone.isEmpty) return;
     final Uri url = Uri(scheme: 'tel', path: phone);
-    if (!await launchUrl(url)) {
+    if (await canLaunchUrl(url)) {
+      final launched = await launchUrl(url);
+      if (launched) {
+        // Log call activity
+        final prefs = await SharedPreferences.getInstance();
+        final userName = prefs.getString("user_name") ?? "Unknown";
+        await LeadService.logCallActivity(
+          leadId: lead.id,
+          userName: userName,
+        );
+
+        // Notify campaign screen to refresh
+        if (campaignId != null) {
+          final intId = int.tryParse(campaignId);
+          if (intId != null) {
+            campaignProgressNotifier.markUpdated(intId);
+          }
+        }
+
+        // Refresh leads list
+        fetchContactedLeads();
+      }
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open dialer')),
       );
     }
   }
+
+
 
   String _getAgentInitials() {
     if (userName != null && userName!.isNotEmpty) {
@@ -169,7 +194,7 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      /*bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.grey,
@@ -194,7 +219,7 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
           ),
         ],
 
-      ),
+      ),*/
     );
   }
 
@@ -329,7 +354,7 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: ElevatedButton(
-            onPressed: () => callNow(lead),
+            onPressed: () => callNow(lead,campaignId: lead.campaignId),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.blue,
               foregroundColor: Colors.white,

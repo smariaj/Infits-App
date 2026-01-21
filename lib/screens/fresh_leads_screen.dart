@@ -4,6 +4,7 @@ import 'package:internship_app/services/lead_service.dart';
 import 'package:internship_app/screens/lead_and_activity_details.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:internship_app/screens/campaign_progess_notifier.dart';
 
 class FreshLeadsScreen extends StatefulWidget {
   const FreshLeadsScreen({super.key});
@@ -47,16 +48,42 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
     }
   }
 
-  Future<void> makeCall(String phone) async {
+  Future<void> makeCall(Lead lead) async {
+    final phone = lead.phone;
+    if (phone.isEmpty) return;
+
     final Uri callUri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(callUri)) {
-      await launchUrl(callUri);
+      final launched = await launchUrl(callUri);
+      if (launched) {
+        // Log call activity
+        final prefs = await SharedPreferences.getInstance();
+        final userName = prefs.getString("user_name") ?? "Unknown";
+
+        await LeadService.logCallActivity(
+          leadId: lead.id,
+          userName: userName,
+        );
+
+        // Notify campaign screen to refresh
+        if (lead.campaignId != null) {
+          final intId = int.tryParse(lead.campaignId!);
+          if (intId != null) {
+            campaignProgressNotifier.markUpdated(intId);
+          }
+        }
+
+        // Refresh the fresh leads list
+        fetchFreshLeads();
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Cannot open dialer")),
       );
     }
   }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -199,7 +226,7 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
                         '${lead.company ?? 'Unknown'} • ${lead.lastActivity ?? 'N/A'}',
                         status: 'New',
                         primaryButton: 'Call Lead',
-                        onCallPressed: () => makeCall(lead.phone),
+                        onCallPressed: () => makeCall(lead),
                       ),
                     );
                   },
@@ -220,7 +247,7 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
         ),
       ),
 
-      bottomNavigationBar: BottomNavigationBar(
+     /* bottomNavigationBar: BottomNavigationBar(
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
@@ -233,7 +260,7 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
           BottomNavigationBarItem(
               icon: Icon(Icons.bar_chart), label: 'Call Stats'),
         ],
-      ),
+      ),*/
     );
   }
 

@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class EditProfileScreen extends StatefulWidget {
-  final Map<String, dynamic> userData; // Dynamic data from backend
+  final Map<String, dynamic> userData;
 
   const EditProfileScreen({super.key, required this.userData});
 
@@ -24,11 +27,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _fullNameController = TextEditingController(text: widget.userData['fullName']);
-    _usernameController = TextEditingController(text: widget.userData['username']);
-    _emailController = TextEditingController(text: widget.userData['email']);
-    _mobileController = TextEditingController(text: widget.userData['mobile']);
-    _employeeIdController = TextEditingController(text: widget.userData['employeeId']);
+
+    _fullNameController =
+        TextEditingController(text: widget.userData['fullName']);
+    _usernameController =
+        TextEditingController(text: widget.userData['username']);
+    _emailController =
+        TextEditingController(text: widget.userData['email']);
+    _mobileController =
+        TextEditingController(text: widget.userData['mobile']);
+    _employeeIdController =
+        TextEditingController(text: widget.userData['employeeId']);
   }
 
   @override
@@ -44,10 +53,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _pickImage() async {
     final pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 70, // compress image to 70%
-      maxWidth: 400, // resize width
-      maxHeight: 400, // resize height
+      imageQuality: 70,
+      maxWidth: 400,
+      maxHeight: 400,
     );
+
     if (pickedFile != null) {
       setState(() {
         _profileImage = File(pickedFile.path);
@@ -55,30 +65,70 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  void _saveChanges() async {
-    // Collect updated data
-    final updatedData = {
-      "fullName": _fullNameController.text,
-      "username": _usernameController.text,
-      "email": _emailController.text,
-      "mobile": _mobileController.text,
-      "employeeId": _employeeIdController.text,
-      "profileImage": _profileImage, // Send File or convert to Base64 for backend
-    };
+  // ================= SAVE CHANGES (FINAL)
+  Future<void> _saveChanges() async {
+    final userId = widget.userData['id'];
 
-    // TODO: Send `updatedData` to backend using POST/PUT
-    // Example using http:
-    // var request = http.MultipartRequest('POST', Uri.parse('https://your-backend.com/update-profile'));
-    // request.fields['fullName'] = updatedData['fullName'];
-    // ... add other fields
-    // if (_profileImage != null) {
-    //   request.files.add(await http.MultipartFile.fromPath('profileImage', _profileImage!.path));
-    // }
-    // var response = await request.send();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Profile updated successfully!")),
+    final uri = Uri.parse(
+      "http://10.169.30.216:3000/users/update-user/$userId",
     );
+
+    try {
+      final request = http.MultipartRequest("PUT", uri);
+
+      // Backend field names (IMPORTANT)
+      request.fields['name'] = _fullNameController.text;
+      request.fields['email'] = _emailController.text;
+      request.fields['phone'] = _mobileController.text;
+
+      if (_profileImage != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'profile_image',
+            _profileImage!.path,
+          ),
+        );
+      }
+
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+      final data = json.decode(body);
+
+      if (response.statusCode == 200 && data["success"] == true) {
+        // Update SharedPreferences with new data
+        final prefs = await SharedPreferences.getInstance();
+
+        // Update name if changed
+        if (_fullNameController.text.trim().isNotEmpty) {
+          await prefs.setString("user_name", _fullNameController.text.trim());
+        }
+
+        // Update profile image if backend returns a new one
+        if (data["data"] != null && data["data"]["profile_image"] != null) {
+          await prefs.setString("profile_image", data["data"]["profile_image"]);
+        } else if (_profileImage != null) {
+          // If we uploaded a new image but backend doesn't return filename
+          // You might need to handle this differently based on your backend
+          // For now, we'll just note that image was updated
+          await prefs.setString("profile_image", "updated");
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Profile updated successfully")),
+        );
+
+        // Return true to indicate successful update
+        Navigator.pop(context, true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Update failed: ${data["message"] ?? "Unknown error"}")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    }
   }
 
   @override
@@ -102,7 +152,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       : (widget.userData['profileImage'] != null
                       ? NetworkImage(widget.userData['profileImage'])
                       : null) as ImageProvider<Object>?,
-                  child: _profileImage == null && widget.userData['profileImage'] == null
+                  child: _profileImage == null &&
+                      widget.userData['profileImage'] == null
                       ? const Icon(Icons.person, size: 60)
                       : null,
                 ),
@@ -118,7 +169,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         border: Border.all(color: Colors.white, width: 2),
                       ),
                       padding: const EdgeInsets.all(8),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      child: const Icon(Icons.camera_alt,
+                          color: Colors.white, size: 20),
                     ),
                   ),
                 ),
@@ -126,15 +178,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              widget.userData['fullName'] ?? "Full Name",
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              widget.userData['fullName'],
+              style:
+              const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
             _buildTextField("Full Name", _fullNameController),
             _buildTextField("Username", _usernameController),
-            _buildTextField("Email", _emailController, keyboardType: TextInputType.emailAddress),
-            _buildTextField("Mobile Number", _mobileController, keyboardType: TextInputType.phone),
-            _buildTextField("Employee ID", _employeeIdController, enabled: false),
+            _buildTextField("Email", _emailController,
+                keyboardType: TextInputType.emailAddress),
+            _buildTextField("Mobile Number", _mobileController,
+                keyboardType: TextInputType.phone),
+            _buildTextField("Employee ID", _employeeIdController,
+                enabled: false),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
@@ -144,7 +200,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   backgroundColor: Colors.blue,
                 ),
-                child: const Text("Save Changes", style: TextStyle(fontSize: 16)),
+                child:
+                const Text("Save Changes", style: TextStyle(fontSize: 16)),
               ),
             ),
           ],
@@ -153,8 +210,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _buildTextField(String label, TextEditingController controller,
-      {bool enabled = true, TextInputType keyboardType = TextInputType.text}) {
+  Widget _buildTextField(
+      String label,
+      TextEditingController controller, {
+        bool enabled = true,
+        TextInputType keyboardType = TextInputType.text,
+      }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: TextField(
@@ -163,7 +224,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         keyboardType: keyboardType,
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
     );
