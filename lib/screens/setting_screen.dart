@@ -16,7 +16,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String userName = "";
   String userProfileImage = "";
   int? userId;
-  static const String baseUrl = "http://10.169.30.216:3000";
+  static const String baseUrl = "http://10.120.217.15:3000";
 
   @override
   void initState() {

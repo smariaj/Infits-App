@@ -56,14 +56,18 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
     if (await canLaunchUrl(callUri)) {
       final launched = await launchUrl(callUri);
       if (launched) {
-        // Log call activity
+        // Log call activity with user ID and name
         final prefs = await SharedPreferences.getInstance();
-        final userName = prefs.getString("user_name") ?? "Unknown";
+        final userId = prefs.getInt("user_id");
+        final userName = prefs.getString("user_name");
 
-        await LeadService.logCallActivity(
-          leadId: lead.id,
-          userName: userName,
-        );
+        if (userId != null && userName != null) {
+          await LeadService.logCallActivity(
+            leadId: lead.id,
+            userId: userId,
+            user: userName, // <-- send the name to backend
+          );
+        }
 
         // Notify campaign screen to refresh
         if (lead.campaignId != null) {
@@ -77,9 +81,11 @@ class _FreshLeadsScreenState extends State<FreshLeadsScreen> {
         fetchFreshLeads();
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Cannot open dialer")),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Cannot open dialer")),
+        );
+      }
     }
   }
 

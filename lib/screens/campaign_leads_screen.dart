@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/lead_model.dart';
 import '../services/lead_service.dart';
+import '../services/whatsapp_service.dart'; // added for WhatsApp
 import 'lead_and_activity_details.dart';
 
 class CampaignLeadsScreen extends StatefulWidget {
@@ -56,25 +57,44 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
           (l.company ?? '').toLowerCase().contains(searchQuery.toLowerCase());
     }).toList();
   }
+
   Future<void> _makeCall(String phone, int leadId) async {
     final prefs = await SharedPreferences.getInstance();
-    final userName = prefs.getString("user_name") ?? "Unknown";
+    final userId = prefs.getInt("user_id");        // Agent ID
+    final userName = prefs.getString("user_name"); // Agent name
+
+    if (userId == null || userName == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User not logged in')),
+        );
+      }
+      return;
+    }
 
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) {
       final launched = await launchUrl(uri);
       if (launched) {
-        // Log the call in backend
+        // Log the call in backend using user ID AND name
         await LeadService.logCallActivity(
           leadId: leadId,
-          userName: userName,
+          userId: userId,
+          user: userName,
         );
 
         // Refresh leads so the latest activity is reflected
         _loadLeads();
       }
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot launch phone dialer')),
+        );
+      }
     }
   }
+
 
 
   void _openLeadDetails(Lead lead) async {
@@ -224,14 +244,26 @@ class _CampaignLeadsScreenState extends State<CampaignLeadsScreen> {
                                 ],
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.call,
-                                  color: Colors.blue),
-                              onPressed: () => _makeCall(
-                                lead.phone,
-                                lead.id,
-                              ),
-                            ),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.call,
+                                      color: Colors.blue, size: 20),
+                                  onPressed: () => _makeCall(
+                                    lead.phone,
+                                    lead.id,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.chat_bubble,
+                                      color: Colors.green, size: 20),
+                                  onPressed: () =>
+                                      WhatsAppService.openTemplatePicker(
+                                          context, lead.name, lead.phone),
+                                ),
+                              ],
+                            )
                           ],
                         ),
                       ),

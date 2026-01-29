@@ -69,22 +69,30 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
   }
 
   Future<void> _addActivity(String type, String title, String? description) async {
+    if (loggedInUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User ID not found')),
+      );
+      return;
+    }
+
     try {
       final response = await http.post(
-        Uri.parse('${LeadService.baseUrl}/lead_activities/lead-activities'),
+        Uri.parse('${LeadService.baseUrl}/lead_activities/lead-activities'), // <-- FIXED
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'lead_id': widget.lead.id,
           'type': type,
           'title': title,
           'description': description,
-          'user': loggedInUserName!,
+          'user_id': loggedInUserId,
+          'user': loggedInUserName, // <-- also include user name
         }),
       );
 
-      if (response.statusCode == 201) {
-        await loadActivities();
 
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        await loadActivities();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$title added successfully')),
         );
@@ -93,10 +101,12 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to add activity')),
+        const SnackBar(content: Text('Failed to add activity')),
       );
+      print('Add activity error: $e');
     }
   }
+
 
   Future<void> _updateLeadStatus(String newStatus) async {
     final oldStatus = widget.lead.status;
@@ -170,7 +180,15 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
 
   Future<void> _logPhoneCall() async {
     final prefs = await SharedPreferences.getInstance();
-    final userName = prefs.getString("user_name") ?? "Unknown";
+    final userId = prefs.getInt("user_id");
+    final userName = prefs.getString("user_name"); // <-- fetch user name
+
+    if (userId == null || userName == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("User info not found")),
+      );
+      return;
+    }
 
     TextEditingController notesController = TextEditingController();
     DateTime? callTime;
@@ -211,8 +229,6 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
                             : DateFormat('hh:mm a').format(callTime!)
                         ),
                       ),
-                      const SizedBox(width: 8),
-
                     ],
                   ),
                 ],
@@ -245,7 +261,7 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
 
-        // Log the call activity
+        // Build description for local activity
         String description = 'Called ${widget.lead.phone}';
         if (details['notes'] != null && details['notes'].toString().isNotEmpty) {
           description += '\nNotes: ${details['notes']}';
@@ -255,31 +271,31 @@ class _LeadDetailsScreenState extends State<LeadDetailsScreen> {
           description += '\nDuration: ${duration.inMinutes}m ${duration.inSeconds % 60}s';
         }
 
+        // Add activity locally
         await _addActivity('call', 'Outgoing Call', description);
 
-        // Also log via LeadService for backend
+        // Log activity via backend
         try {
           await LeadService.logCallActivity(
             leadId: widget.lead.id,
-            userName: userName,
+            userId: userId,
+            user: userName, // <-- pass user name here
           );
 
-          // If the lead is part of a campaign, notify the campaign screen
-          // If the lead is part of a campaign, notify the campaign screen
+          // Notify campaign screen if part of a campaign
           if (widget.lead.campaignId != null) {
             final intId = int.tryParse(widget.lead.campaignId!);
             if (intId != null) {
               campaignProgressNotifier.markUpdated(intId);
             }
           }
-
-
         } catch (e) {
           print('Error in LeadService.logCallActivity: $e');
         }
       }
     }
   }
+
 
   void _showWhatsAppTemplatePicker() async {
     await WhatsAppService.openTemplatePicker(context, widget.lead.name, widget.lead.phone);

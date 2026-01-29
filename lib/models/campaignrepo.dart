@@ -9,7 +9,7 @@ class CampaignRepository {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString("jwt_token") ?? "";
 
-    final url = "http://10.169.30.216:3000/campaigns?agentId=$agentId";
+    final url = "http://10.120.217.15:3000/campaigns?agentId=$agentId";
     print("DEBUG FETCH URL: $url");
     print("DEBUG HEADERS: {Content-Type: application/json, Authorization: Bearer $token}");
 

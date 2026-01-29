@@ -94,17 +94,23 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
   Future<void> callNow(Lead lead, {String? campaignId}) async {
     final phone = lead.phone;
     if (phone.isEmpty) return;
+
     final Uri url = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(url)) {
       final launched = await launchUrl(url);
       if (launched) {
-        // Log call activity
+        // Get user ID and name from SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        final userName = prefs.getString("user_name") ?? "Unknown";
-        await LeadService.logCallActivity(
-          leadId: lead.id,
-          userName: userName,
-        );
+        final userId = prefs.getInt("user_id");
+        final userName = prefs.getString("user_name");
+
+        if (userId != null && userName != null) {
+          await LeadService.logCallActivity(
+            leadId: lead.id,
+            userId: userId,
+            user: userName,  // <-- send user name too
+          );
+        }
 
         // Notify campaign screen to refresh
         if (campaignId != null) {
@@ -118,11 +124,15 @@ class _ContactedLeadsScreenState extends State<ContactedLeadsScreen> {
         fetchContactedLeads();
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open dialer')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open dialer')),
+        );
+      }
     }
   }
+
+
 
 
 

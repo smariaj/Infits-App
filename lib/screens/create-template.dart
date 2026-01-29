@@ -15,7 +15,7 @@ class CreateWhatsAppTemplateScreen extends StatefulWidget {
 class _CreateWhatsAppTemplateScreenState
     extends State<CreateWhatsAppTemplateScreen> {
   // ================= CONTROLLERS =================
-  final String baseUrl = "http://10.169.30.216:3000/api/message-templates";
+  final String baseUrl = "http://10.99.253.184:3000/api/message-templates";
 
   final TextEditingController templateNameController =
       TextEditingController();

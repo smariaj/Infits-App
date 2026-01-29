@@ -19,7 +19,7 @@ class SelectWhatsAppTemplateScreen extends StatefulWidget {
 class _SelectWhatsAppTemplateScreenState
     extends State<SelectWhatsAppTemplateScreen> {
   static const String baseUrl =
-      "http://10.169.30.216:3000/api/message-templates";
+      "http://10.120.217.15:3000/api/message-templates";
 
   bool isLoading = true;
   List templates = [];

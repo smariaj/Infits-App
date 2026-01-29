@@ -26,7 +26,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  final String baseUrl = "http://10.169.30.216:3000";
+  final String baseUrl = "http://10.99.253.184:3000";
 
   int selectedBottomNavIndex = 0;
   bool acceptingCalls = true;

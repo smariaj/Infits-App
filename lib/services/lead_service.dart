@@ -3,10 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:internship_app/models/lead_model.dart';
 import 'package:internship_app/models/lead_activity_model.dart';
 
-
 class LeadService {
-  static const String baseUrl = 'http://10.169.30.216:3000';
+  static const String baseUrl = 'http://10.120.217.15:3000';
 
+  /* =========================
+     GET LEADS BY AGENT
+  ========================= */
   static Future<List<Lead>> getLeadsByAgent(int agentId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/leads?agent_id=$agentId'),
@@ -26,19 +28,26 @@ class LeadService {
     }
   }
 
+  /* =========================
+   LOG CALL ACTIVITY
+   (UPDATED: uses user_id + user name)
+========================= */
   static Future<void> logCallActivity({
     required int leadId,
-    required String userName,
+    required int userId,
+    required String user, // <-- name of the user
   }) async {
     final response = await http.post(
-      Uri.parse("$baseUrl/lead-activities"),
+      // <-- updated URL to match backend
+      Uri.parse("$baseUrl/lead_activities/lead-activities"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "lead_id": leadId,
         "type": "call",
         "title": "Outgoing call",
         "description": "Call initiated from mobile app",
-        "user": userName,
+        "user_id": userId,
+        "user": user, // <-- include user name
       }),
     );
 
@@ -47,6 +56,10 @@ class LeadService {
     }
   }
 
+
+  /* =========================
+     GET LEAD ACTIVITIES
+  ========================= */
   static Future<List<LeadActivity>> getLeadActivities(int leadId) async {
     final response = await http.get(
       Uri.parse('$baseUrl/lead_activities/lead-activities?lead_id=$leadId'),
@@ -54,15 +67,20 @@ class LeadService {
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body)['data'];
-      return data.map<LeadActivity>((e) => LeadActivity.fromJson(e)).toList();
+      return data
+          .map<LeadActivity>((e) => LeadActivity.fromJson(e))
+          .toList();
     } else {
       throw Exception('Failed to fetch lead activities');
     }
   }
 
+  /* =========================
+     UPDATE LEAD STATUS
+  ========================= */
   static Future<void> updateLeadStatus(int leadId, String newStatus) async {
     final response = await http.put(
-      Uri.parse('$baseUrl/leads/$leadId'),
+      Uri.parse('$baseUrl/leads/$leadId/status'),
       headers: {
         'Content-Type': 'application/json',
       },
@@ -100,6 +118,4 @@ class LeadService {
       throw Exception('Failed to fetch campaign leads');
     }
   }
-
-
 }

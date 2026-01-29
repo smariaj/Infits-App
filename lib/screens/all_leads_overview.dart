@@ -474,15 +474,23 @@ class _AllLeadsScreenState extends State<AllLeadsScreen> {
 
   Future<void> makeCall(String phone, int leadId, {String? campaignId}) async {
     final prefs = await SharedPreferences.getInstance();
-    final userName = prefs.getString("user_name") ?? "Unknown";
+    final userId = prefs.getInt("user_id");
+    final userName = prefs.getString("user_name"); // get agent name
+
+    if (userId == null || userName == null) {
+      debugPrint("❌ user_id or user_name not found in SharedPreferences");
+      return;
+    }
 
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) {
       final launched = await launchUrl(uri);
       if (launched) {
+        // Log call activity with userId AND userName
         await LeadService.logCallActivity(
           leadId: leadId,
-          userName: userName,
+          userId: userId,
+          user: userName,
         );
 
         // Notify campaign screen that this campaign should refresh
@@ -492,6 +500,7 @@ class _AllLeadsScreenState extends State<AllLeadsScreen> {
             campaignProgressNotifier.markUpdated(intId);
           }
         }
+
         _refreshLeads();
       }
     }

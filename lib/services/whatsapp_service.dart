@@ -6,7 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 /* ================= WHATSAPP SERVICE ================= */
 class WhatsAppService {
   static const String baseUrl =
-      "http://10.169.30.216:3000/api/message-templates";
+      "http://10.120.217.15:3000/api/message-templates";
 
   /* ================= OPEN TEMPLATE PICKER ================= */
   static Future<void> openTemplatePicker(
